@@ -25,7 +25,7 @@
   function kind(c) {
     if (c.err || /fail|error|no-answer|busy|canceled/i.test(c.status || '')) return 'bad';
     if (/queued|in-progress|started|ringing/i.test(c.status || '') && !c.min) return 'live';
-    if (c.by === 'voicemail') return c.min >= 2 ? 'stall' : 'vm';
+    if (c.by === 'voicemail') return c.min >= 1.25 ? 'stall' : 'vm';
     if (c.by === 'human') return 'ok';
     if (!c.min || c.min < 0.1) return 'bad';
     return 'na';
@@ -58,7 +58,7 @@
   function alertsHtml(al) {
     if (!al.length) return '<p class="mut">Nothing needs you. Voicemails and failed calls from the last 7 days show up here.</p>';
     var st = al.filter(function (c) { return kind(c) === 'stall'; }).length;
-    return (st ? '<div class="card"><h4>Voicemail is stalling</h4><div class="mut">' + st + ' call(s) hit voicemail and kept the line open 2+ minutes. The agent usually went silent instead of leaving the message. Tap one to see what happened.</div></div>' : '') +
+    return (st ? '<div class="card"><h4>Voicemail is stalling</h4><div class="mut">' + st + ' call(s) hit voicemail and kept the line open well past the time a message takes. The agent usually went silent instead of leaving the message. Tap one to see what happened.</div></div>' : '') +
       al.map(row).join('') + '<button class="btn alt" data-act="seenAll">Mark all as seen</button>';
   }
   function logHtml() {
