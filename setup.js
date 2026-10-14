@@ -5,9 +5,9 @@
   var VOICES = ['michelle', 'maya', 'june', 'paige', 'tina', 'nat', 'josh', 'ryan', 'mason', 'derek', 'florian', 'evelyn'];
   var MODELS = [['base', 'Base (best for following scripts)'], ['turbo', 'Turbo (fastest replies)'], ['enhanced', 'Enhanced']];
   var LANGS = [['en-US', 'English (US)'], ['en-GB', 'English (UK)'], ['he', 'Hebrew'], ['es', 'Spanish'], ['fr', 'French'], ['ru', 'Russian']];
-  function def() { return { name: 'Katya', prompt: 'You are Katya, a friendly, concise assistant calling on behalf of Roni Gafni. Be brief and polite.', voice: 'michelle', model: 'base', temperature: 0.6, language: 'en-US',
-    wait_for_greeting: true, interruption_threshold: 120, block_interruptions: false, backchannels: true, noise_cancellation: true,
-    vm_action: 'leave_message', vm_message: "Hi, it's Katya calling for Roni Gafni. Please call back when you can. Thanks!", max_duration: 10, record: true, first_sentence: 'Hi, this is Katya calling for Roni Gafni.' }; }
+  function def() { return { name: 'Katya', prompt: 'You are Katya, a friendly, concise assistant calling on behalf of Roni Gafni. Be brief and polite.', voice: 'michelle', model: 'base', temperature: 0.45, language: 'en-US',
+    wait_for_greeting: false, interruption_threshold: 160, block_interruptions: false, backchannels: false, noise_cancellation: false,
+    vm_action: 'hangup', vm_message: '', max_duration: 10, record: false, first_sentence: 'Hi, this is Katya, an automated AI assistant calling on behalf of Roni Gafni.' }; }
   function canSave() { return !!(X.S.boot && X.S.boot.hasKey && !X.S.boot.offline); }
   function list() { if (!P.list) { var b = X.S.boot || {}; P.list = (b.personas && b.personas.length) ? b.personas : [def()]; P.svc = b.service || 'bland'; } return P.list; }
   function e(s) { return X.esc(s); }
