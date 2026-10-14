@@ -47,7 +47,7 @@
       tile('rout', 'routines', ((S.boot && S.boot.routines) || []).length, 'Routines', 'wake + calendar briefs') +
       tile('stat', 'stats', S.calls.length ? Math.round(talked / S.calls.length * 100) + '%' : '—', 'Pick-up rate', Math.round(mins) + ' min total') +
       tile('prov', 'providers', '⚖️', 'Voice providers', 'Bland vs Grok & others');
-    $('#banner').innerHTML = (S.boot && !S.boot.hasKey) ? '<div class="card"><b>Read-only snapshot' + (S.at ? ' from ' + esc(when(S.at)) : '') + '.</b><div class="mut">Connect Bland once (menu → Connect Bland) for live calls, transcripts, recordings and dialing.</div></div>' : '';
+    $('#banner').innerHTML = (S.boot && S.boot.offline) ? '<div class="card" style="padding:8px 12px;font-size:13px">💾 <b>Showing saved calls</b> <span class="mut">– live updates after one-time setup</span></div>' : (S.boot && !S.boot.hasKey) ? '<div class="card"><b>Read-only snapshot' + (S.at ? ' from ' + esc(when(S.at)) : '') + '.</b><div class="mut">Connect Bland once (menu → Connect Bland) for live calls, transcripts, recordings and dialing.</div></div>' : '';
     $('#sections').innerHTML = sec('alerts', '🚨 Needs attention', al.length, alertsHtml(al)) + sec('log', '📋 Call log', S.calls.length, logHtml()) +
       sec('routines', '⏰ Scheduled routines', '', routinesHtml()) + sec('stats', '📊 Stats', '', statsHtml()) + sec('providers', '⚖️ Voice providers', '', provHtml());
   }
@@ -177,13 +177,30 @@
   $('#refreshBtn').onclick = function () { load(); toast('Refreshing…'); };
   $('#lockBtn').onclick = function () { if (confirm('Forget the private key on this device?')) { localStorage.removeItem('calls.k'); location.reload(); } };
 
-  function load() { return api('calls').then(function (j) { S.calls = (j.calls || []).sort(function (a, b) { return new Date(b.at) - new Date(a.at); }); S.live = j.live; S.at = j.at; render(); }).catch(function (e) { toast(e.message); }); }
+  function load() { if (S.boot && S.boot.offline) { toast('Showing saved calls – live updates after one-time setup'); return Promise.resolve(); } return api('calls').then(function (j) { S.calls = (j.calls || []).sort(function (a, b) { return new Date(b.at) - new Date(a.at); }); S.live = j.live; S.at = j.at; render(); }).catch(function (e) { toast(e.message); }); }
   function gate(msg) { $('#tiles').innerHTML = ''; var g = $('#gate'); g.classList.remove('hidden'); g.innerHTML = '<h3>🔒 Private</h3><p class="mut">' + msg + '</p>'; }
   function start() {
     if (!KEY) return gate('Open this app from your private link.');
     $('#tiles').innerHTML = '<div class="card mut" style="grid-column:1/-1">Loading your calls…</div>';
     api('boot').then(function (b) { S.boot = b; b.contacts = b.contacts || []; b.scripts = b.scripts || []; b.seen = b.seen || {}; $('#lineLbl').textContent = 'Line ' + fmtNum(b.line) + (b.hasKey ? ' · live' : ' · snapshot'); render(); return load(); })
-      .catch(function (e) { if (e.message === 'locked') { localStorage.removeItem('calls.k'); gate('This link key is not valid. Open your private link again.'); } else gate('Could not reach your backend: ' + esc(e.message)); });
+      .catch(function (e) { if (e.message === 'locked') { localStorage.removeItem('calls.k'); gate('This link key is not valid. Open your private link again.'); } else offline(e); });
+  }
+  function b64(s) { return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }); }
+  function decryptSnap() {
+    var X = window.CALLS_SNAP, cs = window.crypto && crypto.subtle;
+    if (!X || !cs) return Promise.reject(new Error('no snapshot'));
+    return cs.importKey('raw', new TextEncoder().encode(KEY), 'PBKDF2', false, ['deriveKey'])
+      .then(function (m) { return cs.deriveKey({ name: 'PBKDF2', salt: b64(X.salt), iterations: X.iter, hash: 'SHA-256' }, m, { name: 'AES-GCM', length: 256 }, false, ['decrypt']); })
+      .then(function (k) { return cs.decrypt({ name: 'AES-GCM', iv: b64(X.iv) }, k, b64(X.ct)); })
+      .then(function (buf) { return JSON.parse(new TextDecoder().decode(buf)); });
+  }
+  function offline(e) {
+    decryptSnap().then(function (d) {
+      S.boot = { offline: true, hasKey: false, routines: d.routines || [], line: d.line, contacts: d.contacts || [], scripts: [], seen: {} };
+      S.calls = (d.calls || []).sort(function (a, b) { return new Date(b.at) - new Date(a.at); }); S.live = false; S.at = d.at;
+      $('#lineLbl').textContent = 'Line ' + fmtNum(d.line) + ' · saved';
+      render();
+    }).catch(function () { gate('Could not reach your backend: ' + esc(e.message)); });
   }
   start();
 })();
