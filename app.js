@@ -46,10 +46,11 @@
       tile('log', 'log', today.length, 'Calls today', S.calls.length + ' in log') +
       tile('rout', 'routines', ((S.boot && S.boot.routines) || []).length, 'Routines', 'wake + calendar briefs') +
       tile('stat', 'stats', S.calls.length ? Math.round(talked / S.calls.length * 100) + '%' : '—', 'Pick-up rate', Math.round(mins) + ' min total') +
-      tile('prov', 'providers', '⚖️', 'Voice providers', 'Bland vs Grok & others');
+      tile('prov', 'providers', '⚖️', 'Voice providers', 'Bland vs Grok & others') +
+      '<button class="tile setup" data-go="setup" style="grid-column:1/-1;min-height:96px;flex-direction:row;align-items:center"><div><div class="lbl" style="font-size:20px">Setup</div><div class="sub">Personas, voice, voicemail & call behavior</div></div><span style="font-size:38px;margin-left:auto">🎛️</span></button>';
     $('#banner').innerHTML = (S.boot && S.boot.offline) ? '<div class="card" style="padding:8px 12px;font-size:13px">💾 <b>Showing saved calls</b> <span class="mut">– live updates after one-time setup</span></div>' : (S.boot && !S.boot.hasKey) ? '<div class="card"><b>Read-only snapshot' + (S.at ? ' from ' + esc(when(S.at)) : '') + '.</b><div class="mut">Connect Bland once (menu → Connect Bland) for live calls, transcripts, recordings and dialing.</div></div>' : '';
     $('#sections').innerHTML = sec('alerts', '🚨 Needs attention', al.length, alertsHtml(al)) + sec('log', '📋 Call log', S.calls.length, logHtml()) +
-      sec('routines', '⏰ Scheduled routines', '', routinesHtml()) + sec('stats', '📊 Stats', '', statsHtml()) + sec('providers', '⚖️ Voice providers', '', provHtml());
+      sec('routines', '⏰ Scheduled routines', '', routinesHtml()) + sec('stats', '📊 Stats', '', statsHtml()) + sec('providers', '⚖️ Voice providers', '', provHtml()) + sec('setup', '🎛️ Setup', window.CallsSetup.count() + ' personas', window.CallsSetup.html());
   }
   function tile(cls, go, big, lbl, sub) { return '<button class="tile ' + cls + '" data-go="' + go + '"><div class="big">' + esc(big) + '</div><div><div class="lbl">' + esc(lbl) + '</div><div class="sub">' + esc(sub) + '</div></div></button>'; }
   function sec(id, title, cnt, html) { return '<details class="sec" id="s-' + id + '"' + (S.open[id] ? ' open' : '') + '><summary>' + title + '<span class="cnt">' + esc(cnt) + '</span></summary><div class="body">' + html + '</div></details>'; }
@@ -202,5 +203,6 @@
       render();
     }).catch(function () { gate('Could not reach your backend: ' + esc(e.message)); });
   }
+  window.CallsSetup.init({ S: S, api: api, sheet: sheet, close: close, toast: toast, esc: esc, render: render });
   start();
 })();
