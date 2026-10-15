@@ -1,208 +1,229 @@
+/* Katya Calls v2. No data or keys in this file: everything comes from the private backend (config.js) and needs Roni's link key. */
 (function () {
   'use strict';
-  var C = window.CALLS_CONFIG, PV = window.PROVIDERS;
+  var C = window.CALLS_CONFIG || {};
   var KEY = (function () {
-    var h = new URLSearchParams((location.hash || '').slice(1)), k = h.get('k');
-    if (k) { localStorage.setItem('calls.k', k); history.replaceState(null, '', location.pathname); }
+    var h = location.hash || '', m = /[#&?]k=([^&]+)/.exec(h);
+    if (m) { localStorage.setItem('calls.k', decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + '#/life/today'); }
     return localStorage.getItem('calls.k') || '';
   })();
-  var S = { calls: [], live: false, at: null, boot: null, filter: 'all', open: {} };
-  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $ = function (s) { return document.querySelector(s); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
-  function api(a, data) {
-    var b = Object.assign({ k: KEY, a: a }, data || {});
-    return fetch(C.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(b), redirect: 'follow', referrerPolicy: 'no-referrer' })
+  var ST = { P: localStorage.getItem('calls.p') || 'life', route: ['today'], boot: null, calls: null, err: '', f: { type: 'All', person: '', persona: '' }, det: {}, ask: null, asking: false, ch: 'Call', draft: {} };
+  function api(a, d) {
+    return fetch(C.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ k: KEY, a: a }, d || {})), redirect: 'follow', referrerPolicy: 'no-referrer' })
       .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || 'failed'); return j; });
   }
   function toast(t) { var e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(function () { e.classList.remove('on'); }, 2600); }
-  function fmtNum(n) { var d = String(n || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : (n || '—'); }
-  function who(n) { var d = String(n || '').replace(/\D/g, '').slice(-10), cs = (S.boot && S.boot.contacts) || []; for (var i = 0; i < cs.length; i++) if (String(cs[i].num).replace(/\D/g, '').slice(-10) === d) return cs[i].name; return fmtNum(n); }
-  function dur(m) { m = +m || 0; if (m < 1) return Math.round(m * 60) + 's'; return Math.floor(m) + 'm ' + Math.round((m % 1) * 60) + 's'; }
-  function when(iso) { if (!iso) return ''; var d = new Date(iso), now = new Date(), y = new Date(now - 864e5);
-    var t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    if (d.toDateString() === now.toDateString()) return 'Today ' + t; if (d.toDateString() === y.toDateString()) return 'Yesterday ' + t;
-    return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' ' + t; }
-  function kind(c) {
-    if (c.err || /fail|error|no-answer|busy|canceled/i.test(c.status || '')) return 'bad';
-    if (/queued|in-progress|started|ringing/i.test(c.status || '') && !c.min) return 'live';
-    if (c.by === 'voicemail') return c.min >= 1.25 ? 'stall' : 'vm';
-    if (c.by === 'human') return 'ok';
-    if (!c.min || c.min < 0.1) return 'bad';
-    return 'na';
-  }
-  var KL = { ok: ['ok', 'Talked'], vm: ['vm', 'Voicemail'], stall: ['bad', 'Voicemail stalled'], bad: ['bad', 'Failed / no answer'], na: ['na', 'Unclear'], live: ['ok', 'In progress'] };
-  function alerts() { var seen = (S.boot && S.boot.seen) || {}, wk = Date.now() - 7 * 864e5;
-    return S.calls.filter(function (c) { var k = kind(c); return (k === 'stall' || k === 'bad' || k === 'vm') && !seen[c.id] && new Date(c.at) > wk; }); }
+  function sheet(h) { $('#sheetc').innerHTML = h; $('#sheet').classList.add('on'); }
+  function closeSheet() { $('#sheet').classList.remove('on'); }
+  var TTG = function () { return ST.P === 'ttg'; };
+  var go = function (r) { location.hash = '#/' + ST.P + '/' + r; };
 
-  /* ---------- render ---------- */
-  function render() {
-    var today = S.calls.filter(function (c) { return new Date(c.at).toDateString() === new Date().toDateString(); });
-    var al = alerts(), stall = al.filter(function (c) { return kind(c) === 'stall'; }).length;
-    var mins = S.calls.reduce(function (a, c) { return a + (+c.min || 0); }, 0);
-    var talked = S.calls.filter(function (c) { return kind(c) === 'ok'; }).length;
-    $('#tiles').innerHTML =
-      '<button class="tile call" data-act="new"><div><div class="lbl">Start a call</div><div class="sub">Number + what it\'s for → confirm → dial</div></div><span class="ic">📞</span></button>' +
-      tile('alert' + (al.length ? ' hot' : ''), 'alerts', al.length, 'Needs attention', stall ? stall + ' stalled on voicemail' : al.length ? 'voicemail / failed this week' : 'all clear') +
-      tile('log', 'log', today.length, 'Calls today', S.calls.length + ' in log') +
-      tile('rout', 'routines', ((S.boot && S.boot.routines) || []).length, 'Routines', 'wake + calendar briefs') +
-      tile('stat', 'stats', S.calls.length ? Math.round(talked / S.calls.length * 100) + '%' : '—', 'Pick-up rate', Math.round(mins) + ' min total') +
-      tile('prov', 'providers', '⚖️', 'Voice providers', 'Bland vs Grok & others') +
-      '<button class="tile setup" data-go="setup" style="grid-column:1/-1;min-height:96px;flex-direction:row;align-items:center"><div><div class="lbl" style="font-size:20px">Setup</div><div class="sub">Personas, voice, voicemail & call behavior</div></div><span style="font-size:38px;margin-left:auto">🎛️</span></button>';
-    $('#banner').innerHTML = (S.boot && S.boot.offline) ? '<div class="card" style="padding:8px 12px;font-size:13px">💾 <b>Showing saved calls</b> <span class="mut">– live updates after one-time setup</span></div>' : (S.boot && !S.boot.hasKey) ? '<div class="card"><b>Read-only snapshot' + (S.at ? ' from ' + esc(when(S.at)) : '') + '.</b><div class="mut">Connect Bland once (menu → Connect Bland) for live calls, transcripts, recordings and dialing.</div></div>' : '';
-    $('#sections').innerHTML = sec('alerts', '🚨 Needs attention', al.length, alertsHtml(al)) + sec('log', '📋 Call log', S.calls.length, logHtml()) +
-      sec('routines', '⏰ Scheduled routines', '', routinesHtml()) + sec('stats', '📊 Stats', '', statsHtml()) + sec('providers', '⚖️ Voice providers', '', provHtml()) + sec('setup', '🎛️ Setup', window.CallsSetup.count() + ' personas', window.CallsSetup.html());
-  }
-  function tile(cls, go, big, lbl, sub) { return '<button class="tile ' + cls + '" data-go="' + go + '"><div class="big">' + esc(big) + '</div><div><div class="lbl">' + esc(lbl) + '</div><div class="sub">' + esc(sub) + '</div></div></button>'; }
-  function sec(id, title, cnt, html) { return '<details class="sec" id="s-' + id + '"' + (S.open[id] ? ' open' : '') + '><summary>' + title + '<span class="cnt">' + esc(cnt) + '</span></summary><div class="body">' + html + '</div></details>'; }
-  function row(c) { var k = kind(c), l = KL[k];
-    return '<button class="row" data-call="' + esc(c.id) + '"><span class="dot ' + l[0] + '"></span><div class="m"><div class="t">' + esc(c.inbound ? '↙ ' + who(c.from) : who(c.to)) + '</div><div class="s">' + esc(c.summary || l[1]) + '</div></div><div class="r">' + esc(when(c.at)) + '<br>' + esc(dur(c.min)) + '</div></button>'; }
-  function alertsHtml(al) {
-    if (!al.length) return '<p class="mut">Nothing needs you. Voicemails and failed calls from the last 7 days show up here.</p>';
-    var st = al.filter(function (c) { return kind(c) === 'stall'; }).length;
-    return (st ? '<div class="card"><h4>Voicemail is stalling</h4><div class="mut">' + st + ' call(s) hit voicemail and kept the line open well past the time a message takes. The agent usually went silent instead of leaving the message. Tap one to see what happened.</div></div>' : '') +
-      al.map(row).join('') + '<button class="btn alt" data-act="seenAll">Mark all as seen</button>';
-  }
-  function logHtml() {
-    var f = S.filter, F = [['all', 'All'], ['ok', 'Talked'], ['vm', 'Voicemail'], ['bad', 'Failed'], ['in', 'Incoming']];
-    var list = S.calls.filter(function (c) { var k = kind(c); return f === 'all' || (f === 'ok' && k === 'ok') || (f === 'vm' && (k === 'vm' || k === 'stall')) || (f === 'bad' && k === 'bad') || (f === 'in' && c.inbound); });
-    return '<div class="filters">' + F.map(function (x) { return '<button data-filter="' + x[0] + '" class="' + (f === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>' +
-      (list.length ? list.slice(0, 60).map(row).join('') : '<p class="mut">No calls here.</p>');
-  }
-  function routinesHtml() {
-    var r = (S.boot && S.boot.routines) || [];
-    return '<p class="mut">Read-only. These run from your assistant; ask it in chat to change one.</p>' + r.map(function (x) {
-      return '<div class="card rec"><h4>' + esc(x.name) + '</h4><div><b>' + esc(x.when) + '</b></div><div class="mut">' + esc(x.to) + ' · ' + esc(x.voice) + ' · up to ' + esc(x.max) + '</div><p class="mut">' + esc(x.rules) + '</p><div class="mut"><i>Voicemail it leaves:</i> “' + esc(x.vm) + '”</div></div>'; }).join('');
-  }
-  function statsHtml() {
-    if (!S.calls.length) return '<p class="mut">No calls yet.</p>';
-    var cnt = { ok: 0, vm: 0, stall: 0, bad: 0, na: 0, live: 0 }, mins = 0, days = {}, cost = 0;
-    S.calls.forEach(function (c) { cnt[kind(c)]++; mins += +c.min || 0; cost += +c.price || 0; var d = new Date(c.at).toDateString(); days[d] = (days[d] || 0) + 1; });
-    var last7 = []; for (var i = 6; i >= 0; i--) { var d = new Date(Date.now() - i * 864e5); last7.push([d.toLocaleDateString([], { weekday: 'narrow' }), days[d.toDateString()] || 0]); }
-    var mx = Math.max.apply(null, last7.map(function (x) { return x[1]; }).concat(1));
-    return '<div class="kv"><div class="card"><b>' + S.calls.length + '</b><span class="mut">calls in log</span></div><div class="card"><b>' + Math.round(mins) + 'm</b><span class="mut">talk time · avg ' + dur(mins / S.calls.length) + '</span></div>' +
-      '<div class="card"><b>' + cnt.ok + '</b><span class="mut">picked up</span></div><div class="card"><b>' + (cnt.vm + cnt.stall) + '</b><span class="mut">voicemail (' + cnt.stall + ' stalled)</span></div>' +
-      '<div class="card"><b>' + cnt.bad + '</b><span class="mut">failed / no answer</span></div><div class="card"><b>≈$' + (cost ? cost.toFixed(2) : (mins * 0.14).toFixed(2)) + '</b><span class="mut">' + (cost ? 'billed' : 'est. at $0.14/min') + '</span></div></div>' +
-      '<div class="card"><h4>Last 7 days</h4><div class="bars">' + last7.map(function (x) { return '<div style="height:' + (x[1] / mx * 100) + '%"><span>' + x[0] + '</span></div>'; }).join('') + '</div><br></div>';
-  }
-  function provHtml() {
-    return '<div class="card" style="border-left:4px solid var(--coral)"><h4>My take: ' + esc(PV.rec.title) + '</h4><div class="mut" style="color:var(--txt)">' + esc(PV.rec.body) + '</div></div>' +
-      PV.rows.map(function (r) { return '<div class="card"><h4>' + esc(r[0]) + '</h4><table>' + PV.cols.map(function (c, i) { return '<tr><th>' + esc(c) + '</th><td>' + esc(r[i + 1]) + '</td></tr>'; }).join('') + '</table></div>'; }).join('') +
-      '<div class="mut" style="margin-top:10px">' + PV.notes.map(esc).join('<br>') + '<br>Checked ' + esc(PV.checked) + '.</div>';
+  /* ---------- formatting ---------- */
+  function dur(m) { m = +m || 0; if (!m) return '0s'; var s = Math.round(m * 60); return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + ('0' + s % 60).slice(-2) + 's'; }
+  function day(iso) { var d = new Date(iso), n = new Date(), y = new Date(n - 864e5);
+    if (d.toDateString() === n.toDateString()) return 'Today'; if (d.toDateString() === y.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
+  function tm(iso) { return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+  function when(iso) { return iso ? day(iso) + ', ' + tm(iso) : ''; }
+  function fmtNum(n) { var d = String(n || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : (n || ''); }
+  function outTag(o) { var c = /^Answered$/.test(o) ? 'good' : /Voicemail|No answer|unclear|progress/.test(o) ? 'warn' : /Failed/.test(o) ? 'bad' : ''; return '<span class="tag ' + c + '">' + esc(o || 'Unknown') + '</span>'; }
+  function guessTag(c) { return c.sure === false ? '<span class="tag guess" title="' + esc(c.why) + '">Type is a guess</span>' : ''; }
+  function ini(n) { n = String(n || '?'); return /^(You|Me)$/.test(n) ? 'Me' : n.replace(/[^A-Za-z. ]/g, '').split(/\s+/).map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase() || '#'; }
+  var calls = function () { return (ST.calls || []).filter(function (c) { return (c.portal || 'life') === ST.P; }); };
+  var outbox = function () { return ((ST.boot && ST.boot.outbox) || []).filter(function (x) { return x.portal === ST.P && x.status === 'draft'; }); };
+  var personas = function () { return ((ST.boot && ST.boot.personaInfo) || []).filter(function (p) { return p.portal === ST.P; }); };
+  function loading(t) { return '<div class="empty"><div class="t"><span class="spin"></span>' + esc(t || 'Loading your calls…') + '</div></div>'; }
+  function empty(t, s) { return '<div class="empty"><div class="t">' + esc(t) + '</div>' + (s ? '<div>' + esc(s) + '</div>' : '') + '</div>'; }
+  function callRow(c) {
+    return '<a class="row link" href="#/' + ST.P + '/call/' + encodeURIComponent(c.id) + '"><div class="av">' + esc(ini(c.person)) + '</div><div class="grow"><div class="t ell">' + esc(c.type || 'Call') + ' · ' + esc(c.person || '') + '</div>' +
+      '<div class="m ell">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + '</div></div>' + outTag(c.outcome) + '<span class="chev">›</span></a>';
   }
 
-  /* ---------- sheets ---------- */
-  function sheet(html) { $('#sheetBody').innerHTML = html; $('#sheet').classList.remove('hidden'); }
-  function close() { $('#sheet').classList.add('hidden'); }
-  function openCall(id) {
-    var c = S.calls.find(function (x) { return x.id === id; }) || { id: id }, l = KL[kind(c)];
-    sheet('<h3>' + esc(c.inbound ? who(c.from) : who(c.to)) + '</h3><div class="mut">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + ' · <span class="pill ' + l[0] + '">' + l[1] + '</span></div>' +
-      (c.err ? '<div class="card"><b>Error:</b> ' + esc(c.err) + '</div>' : '') + '<div class="card"><h4>Summary</h4><div id="sum" class="mut">' + esc(c.summary || 'Loading…') + '</div></div>' +
-      '<div id="recBox"></div><div class="card"><h4>Transcript</h4><div id="tr" class="tr mut">Loading…</div></div>' +
-      '<button class="btn alt" data-act="redial" data-num="' + esc(c.inbound ? c.from : c.to) + '">Call this number again</button><button class="btn alt" data-act="close">Close</button>');
-    if (!S.boot.hasKey) { $('#tr').textContent = 'Transcripts and recordings appear after you connect Bland (menu → Connect Bland).'; if (!c.summary) $('#sum').textContent = 'No summary saved in the snapshot.'; return; }
-    api('call', { id: id }).then(function (j) {
-      $('#sum').textContent = j.call.summary || 'Bland did not write a summary for this call.';
-      $('#tr').innerHTML = j.transcript.length ? j.transcript.map(function (t) { var u = t.u === 'user'; return '<p class="' + (u ? 'u' : '') + '"><b>' + (u ? 'Them' : 'Agent') + '</b>' + esc(t.t) + '</p>'; }).join('') : esc(j.text || 'No transcript.');
-      if (j.call.rec) $('#recBox').innerHTML = '<button class="btn ok" data-act="rec" data-id="' + esc(id) + '">▶ Play recording</button>';
-    }).catch(function (e) { $('#tr').textContent = e.message; });
-  }
-  function newCall(num) {
-    var cs = (S.boot.contacts || []), sc = (S.boot.scripts || []);
-    sheet('<h3>Start a call</h3><div class="mut">From ' + esc(fmtNum(S.boot.line)) + ' · Katya voice</div>' +
-      (cs.length ? '<label>Saved contacts</label><div class="chips">' + cs.map(function (c, i) { return '<button data-pick="' + i + '">' + esc(c.name) + '</button>'; }).join('') + '</div>' : '') +
-      '<label>Phone number</label><input id="nNum" inputmode="tel" placeholder="(555) 123-4567" value="' + esc(num ? fmtNum(num) : '') + '">' +
-      (sc.length ? '<label>Scripts</label><div class="chips">' + sc.map(function (s, i) { return '<button data-script="' + i + '">' + esc(s.name) + '</button>'; }).join('') + '</div>' : '') +
-      '<label>What is this call for? (the agent follows this)</label><textarea id="nTask" placeholder="e.g. Call the pharmacy and ask if Roni Gafni\'s prescription is ready for pickup today. Be brief and polite."></textarea>' +
-      '<label>Opening line (optional)</label><input id="nFirst" placeholder="Hi, this is Katya, calling for Roni Gafni.">' +
-      '<label>Max length</label><select id="nMax"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="15">15 min</option></select>' +
-      '<button class="btn" data-act="review">Review call</button><button class="btn alt" data-act="close">Cancel</button>');
-  }
-  function review() {
-    var n = $('#nNum').value, t = $('#nTask').value.trim(), d = n.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
-    if (d.length !== 10) return toast('Enter a 10-digit number'); if (t.length < 8) return toast('Say what the call is for');
-    S.draft = { to: '+1' + d, task: t, first: $('#nFirst').value.trim(), max: $('#nMax').value };
-    sheet('<h3>Confirm call</h3><div class="card"><div class="mut">Calling</div><b style="font-size:24px">' + esc(who(S.draft.to)) + '</b><div class="mut">' + esc(fmtNum(S.draft.to)) + ' · up to ' + esc(S.draft.max) + ' min · from ' + esc(fmtNum(S.boot.line)) + '</div></div>' +
-      '<div class="card"><h4>Purpose</h4><div class="mut" style="white-space:pre-wrap">' + esc(t) + '</div>' + (S.draft.first ? '<h4 style="margin-top:10px">Opens with</h4><div class="mut">' + esc(S.draft.first) + '</div>' : '') + '</div>' +
-      '<button class="btn" data-act="dial">📞 Yes, place the call</button><button class="btn alt" data-act="back">Edit</button>');
-  }
-  function contactsSheet() { var cs = S.boot.contacts || [];
-    sheet('<h3>Saved contacts</h3><div class="mut">Stored privately in your backend, not on GitHub.</div>' + cs.map(function (c, i) { return '<div class="row"><div class="m"><div class="t">' + esc(c.name) + '</div><div class="s">' + esc(fmtNum(c.num)) + (c.note ? ' · ' + esc(c.note) : '') + '</div></div><button class="ghost" data-act="callC" data-i="' + i + '">📞</button><button class="ghost" data-act="delC" data-i="' + i + '">🗑</button></div>'; }).join('') +
-      '<label>Name</label><input id="cName"><label>Number</label><input id="cNum" inputmode="tel"><label>Note (optional)</label><input id="cNote"><button class="btn" data-act="addC">Save contact</button><button class="btn alt" data-act="close">Done</button>'); }
-  function scriptsSheet() { var sc = S.boot.scripts || [];
-    sheet('<h3>Call scripts</h3><div class="mut">Reusable purposes you can drop into “Start a call”.</div>' + sc.map(function (s, i) { return '<div class="row"><div class="m"><div class="t">' + esc(s.name) + '</div><div class="s">' + esc(s.task) + '</div></div><button class="ghost" data-act="delS" data-i="' + i + '">🗑</button></div>'; }).join('') +
-      '<label>Name</label><input id="sName" placeholder="Check appointment"><label>What the agent should do</label><textarea id="sTask"></textarea><button class="btn" data-act="addS">Save script</button><button class="btn alt" data-act="close">Done</button>'); }
-  function settingsSheet() {
-    sheet('<h3>Connect Bland</h3><div class="mut">' + (S.boot.hasKey ? '✅ Connected. Live log, transcripts, recordings and dialing are on.' : 'One time: paste your Bland API key (Bland dashboard → API keys). It is stored only inside your private Google Apps Script, never sent back to this page or saved on GitHub.') + '</div>' +
-      '<label>Bland API key</label><input id="bk" type="password" autocomplete="off" placeholder="' + (S.boot.hasKey ? '•••••• (replace)' : 'org_…') + '"><button class="btn" data-act="saveKey">Save key</button>' +
-      (S.boot.hasKey ? '<button class="btn alt" data-act="clearKey">Disconnect</button>' : '') + '<button class="btn alt" data-act="close">Close</button>');
-  }
-  function privacySheet() { sheet('<h3>Privacy</h3><div class="card mut">• This page is public code with no data and no keys in it.<br>• Your private link key is kept on this device only and removed from the address bar.<br>• Every request goes to your own Google Apps Script, which checks the key (only a hash is stored) before answering.<br>• The Bland API key lives only in that script\'s private settings.<br>• Search engines are told not to index this page.</div><button class="btn alt" data-act="close">Close</button>'); }
+  /* ---------- views ---------- */
+  var V = {};
+  V.today = function () {
+    if (!ST.calls) return loading();
+    var cs = calls(), td = cs.filter(function (c) { return day(c.at) === 'Today'; }), q = outbox();
+    var wk = Date.now() - 7 * 864e5, miss = cs.filter(function (c) { return new Date(c.at) > wk && /Voicemail|No answer|Failed/.test(c.outcome); });
+    var r = ((ST.boot && ST.boot.routines) || []), nx = TTG() ? null : r[0];
+    var hr = new Date().getHours();
+    return '<h1>' + (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + '</h1><p class="sub">' + (TTG() ? 'TTG business calls' : 'Your life calls') + '</p>' +
+      (nx ? '<div class="card hero"><div class="m">Scheduled routine</div><div class="big">' + esc(nx.name) + '</div><div class="m">' + esc(nx.when) + '</div><div class="actions"><a class="btn" href="#/' + ST.P + '/routines">See routines</a></div></div>'
+        : '<div class="card hero"><div class="m">TTG</div><div class="big">No scheduled business calls</div><div class="m">Business calls only go out when you start one and confirm.</div><div class="actions"><a class="btn w2" href="#/ttg/new">Start a call</a></div></div>') +
+      '<div class="grid2" style="margin-top:10px"><a class="tile" href="#/' + ST.P + '/calls"><b>' + td.length + '</b><span class="m">Calls today</span></a><a class="tile" href="#/' + ST.P + '/queue"><b>' + q.length + '</b><span class="m">Waiting for approval</span></a></div>' +
+      '<h2>Latest calls <a href="#/' + ST.P + '/calls">All calls</a></h2>' + (cs.length ? '<div class="card">' + cs.slice(0, 3).map(callRow).join('') + '</div>' : empty('No calls yet')) +
+      (miss.length ? '<h2>Missed this week</h2><div class="card">' + miss.slice(0, 3).map(callRow).join('') + '</div>' + (miss.length > 3 ? '<p class="m">' + (miss.length - 3) + ' more in Calls → filter “Not reached”.</p>' : '') : '') +
+      (q.length ? '<h2>Waiting for you <a href="#/' + ST.P + '/queue">Open</a></h2><div class="card">' + q.slice(0, 2).map(function (x) { return '<div class="row"><div class="grow"><div class="t ell">' + (x.ch === 'email' ? 'Email' : 'Text') + ' to ' + esc(x.to) + '</div><div class="m ell">' + esc(x.body) + '</div></div></div>'; }).join('') + '</div>' : '');
+  };
+  V.calls = function () {
+    if (!ST.calls) return loading();
+    var cs = calls(), f = ST.f, types = ['All'], ppl = {};
+    cs.forEach(function (c) { if (types.indexOf(c.type) < 0) types.push(c.type); ppl[c.person] = 1; });
+    types.push('Not reached');
+    var ps = personas();
+    var list = cs.filter(function (c) {
+      if (f.type === 'Not reached') { if (!/Voicemail|No answer|Failed/.test(c.outcome)) return false; } else if (f.type !== 'All' && c.type !== f.type) return false;
+      if (f.person && c.person !== f.person) return false;
+      if (f.persona) { var p = ps.filter(function (x) { return x.name === f.persona; })[0]; if (p && p.types.indexOf(c.type) < 0) return false; }
+      return true; });
+    var groups = [], last = null;
+    list.forEach(function (c) { var d = day(c.at); if (d !== last) { groups.push([d, []]); last = d; } groups[groups.length - 1][1].push(c); });
+    return '<h1>Calls</h1><p class="sub">' + cs.length + ' calls in ' + (TTG() ? 'TTG' : 'Life') + (ST.live === false ? ' · saved copy' : '') + '</p>' +
+      '<div class="flabel" style="margin-top:0">Type</div><div class="chips">' + types.map(function (t) { return '<button class="chip ' + (f.type === t ? 'on' : '') + '" data-ft="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
+      '<div class="grid2"><div><div class="flabel">Persona</div><select id="fpersona"><option value="">All personas</option>' + ps.map(function (p) { return '<option ' + (f.persona === p.name ? 'selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></div>' +
+      '<div><div class="flabel">Person</div><select id="fperson"><option value="">Everyone</option>' + Object.keys(ppl).sort().map(function (p) { return '<option ' + (f.person === p ? 'selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select></div></div>' +
+      (list.length ? groups.map(function (g) { return '<h2>' + esc(g[0]) + '<span class="m" style="text-transform:none;letter-spacing:0">' + g[1].length + '</span></h2><div class="card">' + g[1].map(callRow).join('') + '</div>'; }).join('') : empty('No calls match', 'Try “All” or a different person.'));
+  };
+  V.call = function (id) {
+    id = decodeURIComponent(id || '');
+    var base = (ST.calls || []).filter(function (c) { return c.id === id; })[0], d = ST.det[id];
+    if (!d) { if (!ST.det['_' + id]) { ST.det['_' + id] = 1; api('call2', { id: id }).then(function (j) { ST.det[id] = j; draw(1); }).catch(function (e) { ST.det[id] = { err: e.message }; draw(1); }); } }
+    var c = (d && d.call) || base; if (!c) return d && d.err ? empty('Could not open this call', d.err) : loading('Opening call…');
+    var tr = d && d.transcript;
+    return '<h1>' + esc(c.type || 'Call') + '</h1><p class="sub">' + esc(c.person) + ' · ' + esc(when(c.at)) + '</p>' +
+      '<div class="btns" style="margin-bottom:12px">' + outTag(c.outcome) + '<span class="tag">' + (c.inbound ? 'Incoming' : 'Outgoing') + '</span>' + guessTag(c) + '</div>' +
+      (c.sure === false ? '<div class="note" style="margin-bottom:10px"><b>Why this type:</b> ' + esc(c.why) + '. It is a best guess from the first sentence and transcript.</div>' : '') +
+      '<div class="stat"><div><b>' + esc(dur(c.min)) + '</b><span class="m">Length</span></div><div><b>' + esc(c.turns != null ? c.turns : '—') + '</b><span class="m">Lines spoken</span></div><div><b>' + (c.lat != null ? esc(c.lat) + 's' : '—') + '</b><span class="m">Avg. gap per reply</span></div></div>' +
+      '<h2>Summary</h2><div class="card pad sumtxt">' + (c.summary ? esc(c.summary) : '<span class="m">No summary from Bland for this call.</span>') + '</div>' +
+      (c.err ? '<div class="note warnbox">Error: ' + esc(c.err) + '</div>' : '') +
+      '<h2>Transcript</h2>' + (!d ? loading('Loading transcript…') : tr && tr.length ? '<div class="tr">' + tr.map(function (t) { var k = t.u === 'user'; return '<div class="who ' + (k ? 'r' : '') + '">' + (k ? esc(c.person === 'You' ? 'You' : c.person) : (t.u === 'assistant' ? 'Katya' : esc(t.u))) + '</div><div class="bub ' + (k ? 'u' : 'k') + '">' + esc(t.t) + '</div>'; }).join('') + '</div>' : '<div class="card pad m">No transcript (the call was not picked up or was too short).</div>') +
+      '<h2>Actions</h2><div class="btns"><a class="btn ghost" href="#/' + ST.P + '/ask">Ask across calls</a>' + (!c.inbound ? '<button class="btn" data-again="' + esc(c.to) + '">Call again…</button>' : '') + '</div>';
+  };
+  V.ask = function () {
+    var a = ST.ask;
+    var ex = TTG() ? ['RBT application', 'interview', 'availability'] : ['Shacharit', 'kollel', 'therapy', 'wake up'];
+    return '<h1>Ask</h1><p class="sub">Search what was said on every ' + (TTG() ? 'TTG' : 'Life') + ' call</p>' +
+      '<form id="askf" class="search"><span>⌕</span><input id="cq" placeholder="e.g. ' + esc(ex[0]) + '" value="' + esc(ST.askq || '') + '" autocomplete="off"></form>' +
+      '<div class="chips">' + ex.map(function (e) { return '<button class="chip" data-ex="' + esc(e) + '">' + esc(e) + '</button>'; }).join('') + '</div>' +
+      (ST.asking ? loading('Reading transcripts…') : a ? (a.err ? empty('Search failed', a.err) : '<div class="note">' + esc(a.answer) + '</div>' + (a.hits.length ? '<div class="card" style="margin-top:10px">' + a.hits.map(function (h) {
+        var s = esc(h.snip); (a.words || []).forEach(function (w) { s = s.replace(new RegExp('(' + w.replace(/[^a-z0-9]/g, '') + ')', 'ig'), '<mark>$1</mark>'); });
+        return '<a class="hit" href="#/' + ST.P + '/call/' + encodeURIComponent(h.id) + '"><div class="t">' + esc(h.type) + ' · ' + esc(h.person) + ' <span class="m">' + esc(when(h.at)) + '</span></div><div class="m">…' + s + '…</div></a>'; }).join('') + '</div>' : '')) :
+        '<p class="m">Searches summaries and transcripts. Only ' + (TTG() ? 'TTG' : 'Life') + ' calls are searched; the two are never mixed.</p>');
+  };
+  V.queue = function () {
+    var q = outbox();
+    return '<h1>Approve</h1><p class="sub">Texts and emails wait here. Nothing is sent automatically.</p>' +
+      (q.length ? q.map(function (x) { return '<div class="card pad"><div style="display:flex;justify-content:space-between;gap:8px"><div class="t">' + (x.ch === 'email' ? 'Email' : 'Text') + ' to ' + esc(x.to) + '</div><span class="tag">Draft</span></div>' +
+        '<div class="m" style="margin:2px 0 8px">' + esc(x.why) + ' · ' + esc(when(x.at)) + '</div>' + (x.subj ? '<div class="flabel">Subject</div><div>' + esc(x.subj) + '</div>' : '') +
+        '<div class="flabel">Message</div><textarea rows="3" data-body="' + esc(x.id) + '">' + esc(x.body) + '</textarea>' +
+        '<div class="btns" style="margin-top:10px"><button class="btn red" data-ob="outboxDiscard" data-id="' + esc(x.id) + '">Discard</button><button class="btn ghost" data-ob="outboxEdit" data-id="' + esc(x.id) + '">Save edit</button><button class="btn" data-ob="outboxApprove" data-id="' + esc(x.id) + '">Approve</button></div></div>'; }).join('') +
+        '<p class="m">Approve records your OK. Delivery is not connected yet, so approved items are not sent by this app.</p>'
+        : empty('Nothing waiting', 'Texts and emails you write in New land here first.') + '<a class="btn w ghost" href="#/' + ST.P + '/new">Write a text or email</a>');
+  };
+  V.new = function () {
+    var ch = ST.ch, dr = ST.draft;
+    var head = '<h1>New ' + ch.toLowerCase() + '</h1><p class="sub">' + (ch === 'Call' ? 'Katya calls only after you confirm' : 'Goes to Approve first. Nothing sends by itself.') + '</p>' +
+      '<div class="seg" style="margin:0 0 14px">' + ['Call', 'Text', 'Email'].map(function (c) { return '<button class="' + (ch === c ? 'on' : '') + '" data-ch="' + c + '">' + c + '</button>'; }).join('') + '</div>';
+    if (ch === 'Call') return head + '<div class="flabel">Phone number</div><input id="nto" inputmode="tel" placeholder="(555) 555-5555" value="' + esc(dr.to || '') + '">' +
+      '<div class="flabel">What is the call for? (keep it short)</div><textarea id="ntask" rows="4" placeholder="' + (TTG() ? 'Ask if they are still interested in the RBT role and when they can talk.' : 'Remind me to leave for the 3 PM pickup.') + '">' + esc(dr.task || '') + '</textarea>' +
+      '<div class="m" id="nwords" style="margin-top:4px"></div>' + (TTG() ? '<div class="note" style="margin-top:10px">Business calls always start: “This is an automated AI assistant calling on behalf of Roni Gafni.” Not recorded.</div>' : '') +
+      '<button class="btn w" style="margin-top:16px" data-act="confirmCall">Review and call…</button>';
+    return head + '<div class="flabel">To (' + (ch === 'Text' ? 'name or number' : 'email') + ')</div><input id="nto" value="' + esc(dr.to || '') + '">' +
+      (ch === 'Email' ? '<div class="flabel">Subject</div><input id="nsubj" value="' + esc(dr.subj || '') + '">' : '') +
+      '<div class="flabel">Message</div><textarea id="nbody" rows="5">' + esc(dr.body || '') + '</textarea>' +
+      '<button class="btn w" style="margin-top:16px" data-act="toQueue">Add to Approve</button>';
+  };
+  V.routines = function () {
+    var r = TTG() ? [] : ((ST.boot && ST.boot.routines) || []);
+    return '<h1>Routines</h1><p class="sub">Calls that run on a schedule</p>' + (r.length ? r.map(function (x) {
+      return '<div class="card pad"><div style="display:flex;justify-content:space-between;gap:8px"><div class="t">' + esc(x.name) + '</div><span class="tag good">On</span></div><div class="big" style="font-size:17px">' + esc(x.when) + '</div>' +
+        '<div class="kv"><span class="m">Calls</span><span>' + esc(x.to) + '</span></div><div class="kv"><span class="m">Voice</span><span>' + esc(x.voice) + '</span></div><div class="kv"><span class="m">Longest</span><span>' + esc(x.max) + '</span></div>' +
+        '<div class="kv"><span class="m">Voicemail</span><span style="text-align:right;max-width:65%">' + esc(x.vm) + '</span></div><p class="m">' + esc(x.rules) + '</p></div>'; }).join('')
+      : empty(TTG() ? 'No TTG routines' : 'No routines', TTG() ? 'Business calls are started one at a time from New.' : '')) +
+      '<h2>Everywhere</h2><div class="card"><div class="row"><div class="grow"><div class="t">Shabbat & Yom Tov</div><div class="m">All calls blocked from candle lighting to havdalah (checked by the server)</div></div><span class="tag good">Always on</span></div></div>' +
+      '<p class="m">To change a time or turn one off, ask your assistant in chat. Editing here comes next.</p>';
+  };
+  V.personas = function () {
+    var ps = personas(), cs = calls();
+    return '<h1>Personas</h1><p class="sub">How Katya sounds on each kind of call</p>' + ps.map(function (p, i) {
+      var n = cs.filter(function (c) { return p.types.indexOf(c.type) >= 0; }), ans = n.filter(function (c) { return /^Answered/.test(c.outcome); }).length;
+      return '<a class="card pad" style="display:block" href="#/' + ST.P + '/persona/' + i + '"><div style="display:flex;justify-content:space-between"><div class="t">' + esc(p.name) + '</div><span class="chev">›</span></div><div class="m">' + esc(p.use) + '</div>' +
+        '<div class="m" style="margin-top:6px">' + n.length + ' calls · ' + ans + ' answered · voice: ' + esc(p.voice) + '</div></a>'; }).join('');
+  };
+  V.persona = function (i) {
+    var p = personas()[+i]; if (!p) return empty('Persona not found');
+    var long = p.words > 120;
+    return '<h1>' + esc(p.name) + '</h1><p class="sub">' + esc(p.use) + '</p><div class="card"><div class="kv"><span class="m">Voice</span><span>' + esc(p.voice) + '</span></div><div class="kv"><span class="m">Instructions</span><span>' + (p.words ? p.words + ' words' : 'Set per call') + '</span></div><div class="kv"><span class="m">Call types</span><span>' + esc(p.types.join(', ')) + '</span></div></div>' +
+      (long ? '<div class="note warnbox">These instructions are ' + p.words + ' words. Long instructions made Katya slow to reply (12–19 s). Around 120 words gave 4–7 s.</div>' : '') +
+      (p.prompt ? '<h2>Instructions (start)</h2><div class="card pad"><pre class="prompt">' + esc(p.prompt) + (p.prompt.length >= 900 ? '…' : '') + '</pre></div>' : '') +
+      '<p class="m">Read-only here. Ask your assistant in chat to change a persona.</p>';
+  };
+  V.insights = function () {
+    var cs = calls(); if (!cs.length) return empty('No calls yet');
+    var a = cs.filter(function (c) { return /^Answered/.test(c.outcome); }).length, mins = cs.reduce(function (s, c) { return s + (+c.min || 0); }, 0), L = cs.filter(function (c) { return c.lat != null; });
+    var by = {}; cs.forEach(function (c) { var b = by[c.type] = by[c.type] || [0, 0]; b[0]++; if (/^Answered/.test(c.outcome)) b[1]++; });
+    return '<h1>Insights</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + ' · all ' + cs.length + ' calls</p><div class="stat"><div><b>' + Math.round(a / cs.length * 100) + '%</b><span class="m">Answered</span></div><div><b>' + Math.round(mins) + 'm</b><span class="m">Talk time</span></div><div><b>' + (L.length ? (L.reduce(function (s, c) { return s + c.lat; }, 0) / L.length).toFixed(1) + 's' : '—') + '</b><span class="m">Avg. reply gap</span></div></div>' +
+      '<h2>By type</h2><div class="card">' + Object.keys(by).map(function (k) { var b = by[k]; return '<div class="row"><div class="grow"><div class="t">' + esc(k) + '</div><div class="bar" style="margin-top:6px"><i style="width:' + Math.round(b[1] / b[0] * 100) + '%"></i></div></div><span class="m">' + b[1] + ' of ' + b[0] + ' answered</span></div>'; }).join('') + '</div>';
+  };
+  V.settings = function () {
+    var b = ST.boot || {}, r = function (t, s, tag) { return '<div class="row"><div class="grow"><div class="t">' + t + '</div>' + (s ? '<div class="m">' + s + '</div>' : '') + '</div>' + (tag ? '<span class="tag">' + tag + '</span>' : '') + '</div>'; };
+    return '<h1>Settings</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p><h2>Calling line</h2><div class="card">' + r('Katya’s number', esc(fmtNum(b.line || ''))) + r('Data source', b.hasKey ? 'Live from Bland' : 'Saved copy (Bland not connected)', b.hasKey ? 'Live' : 'Saved') + '</div>' +
+      '<h2>Safety</h2><div class="card">' + r('Texts & emails need approval', 'No automatic sending exists', 'Always') + r('Calls need a confirm tap', '', 'Always') + r('Business calls say they are AI', 'Added by the server', 'Always') + r('Daily call limit', '20 calls a day', 'On') + r('Shabbat & Yom Tov', 'Calls blocked', 'On') + '</div>' +
+      '<h2>Privacy</h2><div class="card">' + r('Student names on TTG', 'Shown as initials', 'On') + r('Life and TTG kept apart', 'Never mixed in lists or search', 'On') + r('Keys', 'Bland key stays on the private server, never in this app') + '</div>' +
+      '<h2>This phone</h2><div class="card">' + r('Add to Home Screen', 'iPhone: Share → Add to Home Screen. Android: menu → Install app.') + '<button class="row link" style="width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left" data-act="forget"><div class="grow"><div class="t" style="color:#a32020">Forget this device</div><div class="m">Removes your link key from this phone</div></div></button></div>';
+  };
+  V.more = function () {
+    var it = [['routines', 'Routines', 'Scheduled calls and pauses'], ['personas', 'Personas', 'Voice and instructions'], ['insights', 'Insights', 'Answer rate and talk time'], ['new', 'New call, text or email', ''], ['settings', 'Settings', 'Safety, privacy, this phone']];
+    return '<h1>More</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p><div class="card">' + it.map(function (i) { return '<a class="row link" href="#/' + ST.P + '/' + i[0] + '"><div class="grow"><div class="t">' + i[1] + '</div>' + (i[2] ? '<div class="m">' + i[2] + '</div>' : '') + '</div><span class="chev">›</span></a>'; }).join('') + '</div>';
+  };
+  V.gate = function () { return '<div class="gate"><h1>Katya Calls</h1><p class="sub">Private app</p><div class="card pad">' + (ST.err ? '<p><b>' + esc(ST.err) + '</b></p>' : '') + '<p>Open this app once from your personal link (it ends in <b>#k=…</b>). After that it remembers this phone.</p><p class="m">No calls or keys are stored in this app; they come from your private server.</p></div></div>'; };
 
-  /* ---------- events ---------- */
+  /* ---------- shell ---------- */
+  var NAV = [['today', '⌂', 'Today'], ['calls', '☏', 'Calls'], ['ask', '⌕', 'Ask'], ['queue', '✓', 'Approve'], ['more', '☰', 'More']];
+  var TITLE = { today: 'Today', calls: 'Calls', call: 'Call', ask: 'Ask', queue: 'Approve', new: 'New', routines: 'Routines', personas: 'Personas', persona: 'Persona', insights: 'Insights', settings: 'Settings', more: 'More' };
+  var PARENT = { call: 'calls', persona: 'personas', routines: 'more', personas: 'more', insights: 'more', settings: 'more', new: 'today' };
+  function parse() { var h = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean); if (h[0] === 'life' || h[0] === 'ttg') { ST.P = h.shift(); localStorage.setItem('calls.p', ST.P); } ST.route = h.length ? h : ['today']; if (!V[ST.route[0]] || ST.route[0] === 'gate') ST.route = ['today']; }
+  function draw(keep) {
+    var r = KEY && !ST.fatal ? ST.route[0] : 'gate', ttg = TTG();
+    document.documentElement.style.setProperty('--acc', ttg ? 'var(--ttg)' : 'var(--life)'); document.documentElement.style.setProperty('--accs', ttg ? '#e3f2ec' : '#e8eefc');
+    var act = PARENT[r] && r !== 'new' ? (r === 'call' ? 'calls' : 'more') : r, par = PARENT[r];
+    if (r === 'call' && ST.from === 'ask') par = 'ask';
+    $('#loc').innerHTML = par ? '<a class="backl" href="#/' + ST.P + '/' + par + '">‹ ' + TITLE[par] + '</a>' : '<div class="brand">Katya Calls<small>Roni · ' + (ttg ? 'TTG' : 'Life') + '</small></div>';
+    $('#seg').innerHTML = '<button class="' + (!ttg ? 'on' : '') + '" data-p="life">Life</button><button class="' + (ttg ? 'on' : '') + '" data-p="ttg">TTG</button>';
+    $('#seg').style.display = r === 'gate' ? 'none' : ''; $('#newb').style.display = r === 'gate' || r === 'new' ? 'none' : ''; $('#newb').href = '#/' + ST.P + '/new';
+    var nq = outbox().length;
+    $('#tabs').innerHTML = r === 'gate' ? '' : NAV.map(function (n) { return '<a href="#/' + ST.P + '/' + n[0] + '" class="' + (act === n[0] ? 'on' : '') + '"><span>' + n[1] + '</span>' + n[2] + (n[0] === 'queue' && nq ? '<i class="badge">' + nq + '</i>' : '') + '</a>'; }).join('');
+    var m = $('#m'); m.innerHTML = V[r](ST.route[1]);
+    if (!keep) { m.style.animation = 'none'; void m.offsetHeight; m.style.animation = ''; scrollTo(0, 0); }
+    var t = $('#ntask'); if (t) { var u = function () { var w = t.value.trim().split(/\s+/).filter(String).length; $('#nwords').textContent = w ? w + ' words' + (w > 120 ? ' — shorter is faster (under 120)' : '') : ''; }; t.oninput = u; u(); }
+  }
+  function saveDraft() { ['to', 'task', 'subj', 'body'].forEach(function (k) { var e = $('#n' + k); if (e) ST.draft[k] = e.value; }); }
+  function load() {
+    if (!KEY) return draw();
+    api('boot').then(function (b) { ST.boot = b; draw(1); return api('calls2', { n: 100 }); })
+      .then(function (j) { ST.calls = j.calls || []; ST.live = j.live; draw(1); })
+      .catch(function (e) { if (/locked/.test(e.message)) { ST.fatal = 1; ST.err = 'This link key is not valid anymore.'; } else { ST.calls = ST.calls || []; toast('Could not reach the server: ' + e.message); } draw(1); });
+  }
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('button,summary'); if (!t) { if (e.target.id === 'sheet') close(); return; }
-    var go = t.dataset.go, act = t.dataset.act;
-    if (t.tagName === 'SUMMARY') { var id = t.parentNode.id.slice(2); setTimeout(function () { S.open[id] = t.parentNode.open; }, 0); return; }
-    if (go) { drawer(false); if (go === 'contacts') return contactsSheet(); if (go === 'scripts') return scriptsSheet(); if (go === 'settings') return settingsSheet(); if (go === 'privacy') return privacySheet();
-      S.open[go] = true; render(); var el = $('#s-' + go); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-    if (t.dataset.call) return openCall(t.dataset.call);
-    if (t.dataset.filter) { S.filter = t.dataset.filter; render(); return; }
-    if (t.dataset.pick) { $('#nNum').value = fmtNum(S.boot.contacts[+t.dataset.pick].num); return; }
-    if (t.dataset.script) { $('#nTask').value = S.boot.scripts[+t.dataset.script].task; return; }
-    var i = +t.dataset.i;
-    switch (act) {
-      case 'new': return S.boot.hasKey ? newCall() : (toast('Connect Bland first'), settingsSheet());
-      case 'close': return close();
-      case 'review': return review();
-      case 'back': newCall(S.draft.to); $('#nTask').value = S.draft.task; $('#nFirst').value = S.draft.first; return;
-      case 'dial': t.disabled = true; t.textContent = 'Dialing…';
-        return api('start', S.draft).then(function (j) { close(); toast('Call placed ✓'); S.draft = null; setTimeout(load, 4000); }).catch(function (er) { t.disabled = false; t.textContent = '📞 Yes, place the call'; toast(er.message); });
-      case 'redial': return S.boot.hasKey ? newCall(t.dataset.num) : toast('Connect Bland first');
-      case 'rec': t.textContent = 'Loading audio…'; return api('rec', { id: t.dataset.id }).then(function (j) { $('#recBox').innerHTML = '<audio controls autoplay style="width:100%;margin-top:10px" src="data:' + j.mime + ';base64,' + j.b64 + '"></audio>'; }).catch(function (er) { t.textContent = er.message; });
-      case 'seenAll': var ids = alerts().map(function (c) { return c.id; }); ids.forEach(function (x) { S.boot.seen[x] = 1; }); render(); return api('seen', { ids: ids }).catch(function () {});
-      case 'addC': var nm = $('#cName').value.trim(), nu = $('#cNum').value.replace(/\D/g, ''); if (!nm || nu.length < 10) return toast('Name and 10-digit number');
-        S.boot.contacts.push({ name: nm, num: nu.slice(-10), note: $('#cNote').value.trim() }); return saveList('saveContacts', S.boot.contacts, contactsSheet);
-      case 'delC': S.boot.contacts.splice(i, 1); return saveList('saveContacts', S.boot.contacts, contactsSheet);
-      case 'callC': return S.boot.hasKey ? newCall(S.boot.contacts[i].num) : toast('Connect Bland first');
-      case 'addS': var sn = $('#sName').value.trim(), st = $('#sTask').value.trim(); if (!sn || st.length < 8) return toast('Name and instructions');
-        S.boot.scripts.push({ name: sn, task: st }); return saveList('saveScripts', S.boot.scripts, scriptsSheet);
-      case 'delS': S.boot.scripts.splice(i, 1); return saveList('saveScripts', S.boot.scripts, scriptsSheet);
-      case 'saveKey': var k = $('#bk').value.trim(); t.textContent = 'Checking with Bland…';
-        return api('setKey', { bland: k }).then(function () { toast('Bland connected ✓'); close(); start(); }).catch(function (er) { t.textContent = 'Save key'; toast(er.message); });
-      case 'clearKey': return api('clearKey').then(function () { toast('Disconnected'); close(); start(); });
-    }
+    var t = e.target.closest('button,a'); if (!t) return;
+    if (e.target === $('#sheet')) return closeSheet();
+    var d = t.dataset;
+    if (d.p) { ST.P = d.p; localStorage.setItem('calls.p', ST.P); ST.ask = null; ST.f = { type: 'All', person: '', persona: '' }; var r0 = ST.route[0]; go(/^(call|persona)$/.test(r0) ? PARENT[r0] : r0); return; }
+    if (t.matches('a.hit')) ST.from = 'ask'; else if (t.matches('a.row')) ST.from = '';
+    if (d.ft) { ST.f.type = d.ft; draw(1); }
+    if (d.ex) { ST.askq = d.ex; doAsk(); }
+    if (d.ch) { saveDraft(); ST.ch = d.ch; draw(1); }
+    if (d.again) { ST.ch = 'Call'; ST.draft = { to: fmtNum(d.again) }; go('new'); }
+    if (d.ob) { var b = document.querySelector('[data-body="' + d.id + '"]'); t.disabled = true;
+      api(d.ob, { id: d.id, body: b && b.value }).then(function (j) { ST.boot.outbox = j.outbox; toast(d.ob === 'outboxApprove' ? 'Approved — not sent automatically' : d.ob === 'outboxDiscard' ? 'Discarded' : 'Saved'); draw(1); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
+    if (d.act === 'toQueue') { saveDraft(); var dr = ST.draft; if (!dr.to || !dr.body) return toast('Add who it is for and a message');
+      t.disabled = true; api('outboxAdd', { ch: ST.ch === 'Email' ? 'email' : 'sms', portal: ST.P, to: dr.to, subj: dr.subj, body: dr.body })
+        .then(function (j) { ST.boot.outbox = j.outbox; ST.draft = {}; toast('Added to Approve. Not sent.'); go('queue'); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
+    if (d.act === 'confirmCall') { saveDraft(); var dc = ST.draft, dg = String(dc.to || '').replace(/\D/g, '');
+      if (dg.length < 10) return toast('Enter a 10-digit number'); if (!dc.task || dc.task.length < 8) return toast('Say what the call is for');
+      sheet('<div class="t" style="font-size:19px">Place this call now?</div><p class="m">Katya will call <b>' + esc(fmtNum(dg)) + '</b> from ' + esc(fmtNum((ST.boot || {}).line)) + '.</p><div class="note" style="margin-bottom:14px">' + esc(dc.task) + '</div>' +
+        '<div class="btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="placeCall">Call now</button></div>'); }
+    if (d.act === 'cancel') closeSheet();
+    if (d.act === 'placeCall') { t.disabled = true; api('start', { to: ST.draft.to, task: ST.draft.task }).then(function (j) { closeSheet(); ST.draft = {}; toast('Calling… it will show in Calls'); go('calls'); setTimeout(load, 8000); }).catch(function (x) { closeSheet(); toast(x.message); }); }
+    if (d.act === 'forget') { if (confirm('Forget the link key on this phone?')) { localStorage.removeItem('calls.k'); location.replace(location.pathname); } }
   });
-  function saveList(a, list, re) { re(); api(a, { list: list }).then(function () { toast('Saved'); }).catch(function (e) { toast(e.message); }); }
-  function drawer(on) { $('#drawer').classList.toggle('open', on); $('#scrim').classList.toggle('on', on); }
-  $('#menuBtn').onclick = function () { drawer(true); }; $('#closeDrawer').onclick = $('#scrim').onclick = function () { drawer(false); };
-  $('#refreshBtn').onclick = function () { load(); toast('Refreshing…'); };
-  $('#lockBtn').onclick = function () { if (confirm('Forget the private key on this device?')) { localStorage.removeItem('calls.k'); location.reload(); } };
-
-  function load() { if (S.boot && S.boot.offline) { toast('Showing saved calls – live updates after one-time setup'); return Promise.resolve(); } return api('calls').then(function (j) { S.calls = (j.calls || []).sort(function (a, b) { return new Date(b.at) - new Date(a.at); }); S.live = j.live; S.at = j.at; render(); }).catch(function (e) { toast(e.message); }); }
-  function gate(msg) { $('#tiles').innerHTML = ''; var g = $('#gate'); g.classList.remove('hidden'); g.innerHTML = '<h3>🔒 Private</h3><p class="mut">' + msg + '</p>'; }
-  function start() {
-    if (!KEY) return gate('Open this app from your private link.');
-    $('#tiles').innerHTML = '<div class="card mut" style="grid-column:1/-1">Loading your calls…</div>';
-    api('boot').then(function (b) { S.boot = b; b.contacts = b.contacts || []; b.scripts = b.scripts || []; b.seen = b.seen || {}; $('#lineLbl').textContent = 'Line ' + fmtNum(b.line) + (b.hasKey ? ' · live' : ' · snapshot'); render(); return load(); })
-      .catch(function (e) { if (e.message === 'locked') { localStorage.removeItem('calls.k'); gate('This link key is not valid. Open your private link again.'); } else offline(e); });
-  }
-  function b64(s) { return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }); }
-  function decryptSnap() {
-    var X = window.CALLS_SNAP, cs = window.crypto && crypto.subtle;
-    if (!X || !cs) return Promise.reject(new Error('no snapshot'));
-    return cs.importKey('raw', new TextEncoder().encode(KEY), 'PBKDF2', false, ['deriveKey'])
-      .then(function (m) { return cs.deriveKey({ name: 'PBKDF2', salt: b64(X.salt), iterations: X.iter, hash: 'SHA-256' }, m, { name: 'AES-GCM', length: 256 }, false, ['decrypt']); })
-      .then(function (k) { return cs.decrypt({ name: 'AES-GCM', iv: b64(X.iv) }, k, b64(X.ct)); })
-      .then(function (buf) { return JSON.parse(new TextDecoder().decode(buf)); });
-  }
-  function offline(e) {
-    decryptSnap().then(function (d) {
-      S.boot = { offline: true, hasKey: false, routines: d.routines || [], line: d.line, contacts: d.contacts || [], scripts: [], seen: {} };
-      S.calls = (d.calls || []).sort(function (a, b) { return new Date(b.at) - new Date(a.at); }); S.live = false; S.at = d.at;
-      $('#lineLbl').textContent = 'Line ' + fmtNum(d.line) + ' · saved';
-      render();
-    }).catch(function () { gate('Could not reach your backend: ' + esc(e.message)); });
-  }
-  window.CallsSetup.init({ S: S, api: api, sheet: sheet, close: close, toast: toast, esc: esc, render: render });
-  start();
+  document.addEventListener('change', function (e) { if (e.target.id === 'fperson') { ST.f.person = e.target.value; draw(1); } if (e.target.id === 'fpersona') { ST.f.persona = e.target.value; draw(1); } });
+  function doAsk() { ST.asking = true; draw(1); api('ask', { q: ST.askq, portal: ST.P }).then(function (j) { ST.ask = j; }).catch(function (x) { ST.ask = { err: x.message }; }).then(function () { ST.asking = false; draw(1); }); }
+  document.addEventListener('submit', function (e) { if (e.target.id === 'askf') { e.preventDefault(); ST.askq = $('#cq').value.trim(); if (ST.askq) doAsk(); } });
+  $('#sheet').addEventListener('click', function (e) { if (e.target.id === 'sheet') closeSheet(); });
+  addEventListener('hashchange', function () { parse(); draw(); });
+  parse(); draw(); load();
+  if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') navigator.serviceWorker && navigator.serviceWorker.register('sw.js').catch(function () {});
 })();
