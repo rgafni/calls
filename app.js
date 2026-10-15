@@ -25,23 +25,41 @@
   var DEFER = null;
   addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); DEFER = e; showInst(); });
   addEventListener('appinstalled', function () { DEFER = null; STANDALONE = true; showInst(); toast('Installed'); });
-  function showInst() { var b = document.querySelectorAll('.instban'); for (var i = 0; i < b.length; i++) b[i].hidden = STANDALONE; }
+  var UA = navigator.userAgent, ANDROID = /Android/i.test(UA);
+  /* In-app browsers (WebViews) never fire beforeinstallprompt; detect them so the button can hand off to real Chrome. */
+  var WV = ANDROID && (/; wv\)/.test(UA) || /Version\/\d+\.\d+ Chrome/.test(UA) || /FBAN|FBAV|Instagram|Line\/|GSA\//.test(UA));
+  var NOBIP = false; setTimeout(function () { if (!DEFER) NOBIP = true; }, 1500);
+  function showInst() { var b = document.querySelectorAll('.instban,.instb'); for (var i = 0; i < b.length; i++) b[i].hidden = STANDALONE; }
+  if (window.__qa) window.__qa.ci = function () { return chromeIntent(); };
+  function chromeIntent() {
+    var base = location.href.replace(/[#?].*$/, ''), u = new URL(base);
+    var frag = KEY ? '#k=' + encodeURIComponent(KEY) : '';
+    return 'intent://' + u.host + u.pathname + frag + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + encodeURIComponent(base + frag) + ';end';
+  }
   /* iOS home-screen apps get their own storage, so point the installed app's start URL at the link key on this phone only. */
-  if (KEY && !STANDALONE) { try {
+  if (KEY && !STANDALONE && IOS) { try {
     var base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, ''), l = document.querySelector('link[rel=manifest]');
     var mf = { name: 'Katya Calls', short_name: 'Calls', id: base, start_url: base + '#k=' + encodeURIComponent(KEY), scope: base, display: 'standalone', orientation: 'portrait', background_color: '#f6f5f2', theme_color: '#f6f5f2',
       icons: [['icon-192.png', '192x192'], ['icon-512.png', '512x512']].map(function (i) { return { src: base + i[0], sizes: i[1], type: 'image/png' }; }).concat([{ src: base + 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }]) };
     if (l) l.href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(mf));
   } catch (e) {} }
   var SHARE = '<svg class="shr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 11v9h14v-9"/></svg>';
+  function chromeSheet() {
+    sheet('<div class="ios"><h3>Install Katya Calls</h3><p class="m">' + (WV ? 'Open this page in Chrome first, then:' : 'In Chrome:') + '</p><ol>' +
+      '<li><span class="n">1</span><span>Tap the <b>&#8942; menu</b> at the <b>top right</b> of Chrome.</span></li>' +
+      '<li><span class="n">2</span><span>Tap <b>Install app</b> (or <b>Add to Home screen</b>).</span></li></ol>' +
+      '<button class="btn w" data-act="cancel">Got it</button></div>');
+  }
   function install() {
     if (DEFER) { DEFER.prompt(); DEFER.userChoice.then(function () { DEFER = null; showInst(); }); return; }
-    if (!IOS) { sheet('<div class="ios"><h3>Install Katya Calls</h3><p class="m">Adds Calls to your Home Screen like a normal app.</p><ol>' +
-      '<li><span class="n">1</span><span>Tap the <b>&#8942; menu</b> at the <b>top right</b> of Chrome.</span></li>' +
-      '<li><span class="n">2</span><span>Tap <b>Install app</b> or <b>Add to Home screen</b>.</span></li>' +
-      '<li><span class="n">3</span><span>Tap <b>Install</b>.</span></li></ol>' +
-      '<div class="note">Then open <b>Calls</b> from your Home Screen. On Samsung Internet, use the &#9776; menu at the bottom, then <b>Add page to</b> → <b>Home screen</b>.</div>' +
-      '<button class="btn w" data-act="cancel">Got it</button></div>'); return; }
+    if (ANDROID && (WV || NOBIP) && !window.__noIntent) {
+      var gone = false, vis = function () { if (document.hidden) gone = true; };
+      document.addEventListener('visibilitychange', vis);
+      location.href = chromeIntent();
+      setTimeout(function () { document.removeEventListener('visibilitychange', vis); if (!gone) chromeSheet(); }, 1200);
+      return;
+    }
+    if (!IOS) { chromeSheet(); return; }
     var crios = /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
     sheet('<div class="ios"><h3>Install Katya Calls</h3><p class="m">Adds the app to your Home Screen. Takes 10 seconds.</p><ol>' +
       '<li><span class="n">1</span><span>Tap the <b>Share</b> icon ' + SHARE + ' ' + (crios ? 'at the <b>top right</b> of Chrome' : 'at the <b>bottom</b> of Safari') + '.</span></li>' +
@@ -194,11 +212,11 @@
     return '<h1>Settings</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p><h2>Calling line</h2><div class="card">' + r('Katya’s number', esc(fmtNum(b.line || ''))) + r('Data source', b.hasKey ? 'Live from Bland' : 'Saved copy (Bland not connected)', b.hasKey ? 'Live' : 'Saved') + '</div>' +
       '<h2>Safety</h2><div class="card">' + r('Texts & emails need approval', 'No automatic sending exists', 'Always') + r('Calls need a confirm tap', '', 'Always') + r('Business calls say they are AI', 'Added by the server', 'Always') + r('Daily call limit', '20 calls a day', 'On') + r('Shabbat & Yom Tov', 'Calls blocked', 'On') + '</div>' +
       '<h2>Privacy</h2><div class="card">' + r('Student names on TTG', 'Shown as initials', 'On') + r('Life and TTG kept apart', 'Never mixed in lists or search', 'On') + r('Keys', 'Bland key stays on the private server, never in this app') + '</div>' +
-      '<h2>This phone</h2><div class="card">' + r('Add to Home Screen', 'iPhone: Share → Add to Home Screen. Android: menu → Install app.') + '<button class="row link" style="width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left" data-act="forget"><div class="grow"><div class="t" style="color:#a32020">Forget this device</div><div class="m">Removes your link key from this phone</div></div></button></div>';
+      '<h2>This phone</h2><div class="card">' + (STANDALONE ? r('Installed ✓', 'Running as the Home Screen app') : r('Not installed', 'Tap Install app at the top')) + '<button class="row link" style="width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left" data-act="forget"><div class="grow"><div class="t" style="color:#a32020">Forget this device</div><div class="m">Removes your link key from this phone</div></div></button></div>';
   };
   V.more = function () {
     var it = [['routines', 'Routines', 'Scheduled calls and pauses'], ['personas', 'Personas', 'Voice and instructions'], ['insights', 'Insights', 'Answer rate and talk time'], ['new', 'New call, text or email', ''], ['settings', 'Settings', 'Safety, privacy, this phone']];
-    return '<h1>More</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p><div class="card">' + it.map(function (i) { return '<a class="row link" href="#/' + ST.P + '/' + i[0] + '"><div class="grow"><div class="t">' + i[1] + '</div>' + (i[2] ? '<div class="m">' + i[2] + '</div>' : '') + '</div><span class="chev">›</span></a>'; }).join('') + '</div>';
+    return '<h1>More</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p>' + (STANDALONE ? '<div class="card"><div class="row"><div class="grow"><div class="t">Installed ✓</div><div class="m">This is the Home Screen app</div></div></div></div>' : '') + '<div class="card">' + it.map(function (i) { return '<a class="row link" href="#/' + ST.P + '/' + i[0] + '"><div class="grow"><div class="t">' + i[1] + '</div>' + (i[2] ? '<div class="m">' + i[2] + '</div>' : '') + '</div><span class="chev">›</span></a>'; }).join('') + '</div>';
   };
   V.gate = function () { return '<div class="gate"><h1>Katya Calls</h1><p class="sub">Private app</p><div class="card pad">' + (ST.err ? '<p><b>' + esc(ST.err) + '</b></p>' : '') + '<p>Open this app once from your personal link (it ends in <b>#k=…</b>). After that it remembers this phone.</p><p class="m">No calls or keys are stored in this app; they come from your private server.</p></div></div>'; };
 
