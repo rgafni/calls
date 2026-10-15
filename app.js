@@ -18,6 +18,32 @@
   function sheet(h) { $('#sheetc').innerHTML = h; $('#sheet').classList.add('on'); }
   function closeSheet() { $('#sheet').classList.remove('on'); }
   var TTG = function () { return ST.P === 'ttg'; };
+
+  /* ---------- install ---------- */
+  var STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  var IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var DEFER = null;
+  addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); DEFER = e; showInst(); });
+  addEventListener('appinstalled', function () { DEFER = null; STANDALONE = true; showInst(); toast('Installed'); });
+  function showInst() { var b = $('#instb'); if (b) b.hidden = STANDALONE || !(DEFER || IOS); }
+  /* iOS home-screen apps get their own storage, so point the installed app's start URL at the link key on this phone only. */
+  if (KEY && !STANDALONE) { try {
+    var base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, ''), l = document.querySelector('link[rel=manifest]');
+    var mf = { name: 'Katya Calls', short_name: 'Calls', id: base, start_url: base + '#k=' + encodeURIComponent(KEY), scope: base, display: 'standalone', orientation: 'portrait', background_color: '#f6f5f2', theme_color: '#f6f5f2',
+      icons: [['icon-192.png', '192x192'], ['icon-512.png', '512x512']].map(function (i) { return { src: base + i[0], sizes: i[1], type: 'image/png' }; }).concat([{ src: base + 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }]) };
+    if (l) l.href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(mf));
+  } catch (e) {} }
+  var SHARE = '<svg class="shr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 11v9h14v-9"/></svg>';
+  function install() {
+    if (DEFER) { DEFER.prompt(); DEFER.userChoice.then(function () { DEFER = null; showInst(); }); return; }
+    var crios = /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+    sheet('<div class="ios"><h3>Install Katya Calls</h3><p class="m">Adds the app to your Home Screen. Takes 10 seconds.</p><ol>' +
+      '<li><span class="n">1</span><span>Tap the <b>Share</b> icon ' + SHARE + ' ' + (crios ? 'at the <b>top right</b> of Chrome' : 'at the <b>bottom</b> of Safari') + '.</span></li>' +
+      '<li><span class="n">2</span><span>Scroll down and tap <b>Add to Home Screen</b>.</span></li>' +
+      '<li><span class="n">3</span><span>Tap <b>Add</b> in the top right corner.</span></li></ol>' +
+      '<div class="note">' + (crios ? 'In Safari, the Share icon is at the bottom instead.' : 'Using Chrome on iPhone? The Share icon is at the <b>top right</b>, next to the address bar.') + ' Then open <b>Calls</b> from your Home Screen.</div>' +
+      '<button class="btn w" data-act="cancel">Got it</button></div>');
+  }
   var go = function (r) { location.hash = '#/' + ST.P + '/' + r; };
 
   /* ---------- formatting ---------- */
@@ -182,7 +208,7 @@
     if (r === 'call' && ST.from === 'ask') par = 'ask';
     $('#loc').innerHTML = par ? '<a class="backl" href="#/' + ST.P + '/' + par + '">‹ ' + TITLE[par] + '</a>' : '<div class="brand">Katya Calls<small>Roni · ' + (ttg ? 'TTG' : 'Life') + '</small></div>';
     $('#seg').innerHTML = '<button class="' + (!ttg ? 'on' : '') + '" data-p="life">Life</button><button class="' + (ttg ? 'on' : '') + '" data-p="ttg">TTG</button>';
-    $('#seg').style.display = r === 'gate' ? 'none' : ''; $('#newb').style.display = r === 'gate' || r === 'new' ? 'none' : ''; $('#newb').href = '#/' + ST.P + '/new';
+    $('#seg').style.display = r === 'gate' ? 'none' : ''; $('#newb').style.display = r === 'gate' || r === 'new' ? 'none' : ''; $('#newb').href = '#/' + ST.P + '/new'; showInst();
     var nq = outbox().length;
     $('#tabs').innerHTML = r === 'gate' ? '' : NAV.map(function (n) { return '<a href="#/' + ST.P + '/' + n[0] + '" class="' + (act === n[0] ? 'on' : '') + '"><span>' + n[1] + '</span>' + n[2] + (n[0] === 'queue' && nq ? '<i class="badge">' + nq + '</i>' : '') + '</a>'; }).join('');
     var m = $('#m'); m.innerHTML = V[r](ST.route[1]);
@@ -216,6 +242,7 @@
       sheet('<div class="t" style="font-size:19px">Place this call now?</div><p class="m">Katya will call <b>' + esc(fmtNum(dg)) + '</b> from ' + esc(fmtNum((ST.boot || {}).line)) + '.</p><div class="note" style="margin-bottom:14px">' + esc(dc.task) + '</div>' +
         '<div class="btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="placeCall">Call now</button></div>'); }
     if (d.act === 'cancel') closeSheet();
+    if (d.act === 'install') install();
     if (d.act === 'placeCall') { t.disabled = true; api('start', { to: ST.draft.to, task: ST.draft.task }).then(function (j) { closeSheet(); ST.draft = {}; toast('Calling… it will show in Calls'); go('calls'); setTimeout(load, 8000); }).catch(function (x) { closeSheet(); toast(x.message); }); }
     if (d.act === 'forget') { if (confirm('Forget the link key on this phone?')) { localStorage.removeItem('calls.k'); location.replace(location.pathname); } }
   });
