@@ -25,7 +25,7 @@
   var DEFER = null;
   addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); DEFER = e; showInst(); });
   addEventListener('appinstalled', function () { DEFER = null; STANDALONE = true; showInst(); toast('Installed'); });
-  function showInst() { var b = $('#instb'); if (b) b.hidden = STANDALONE || !(DEFER || IOS); }
+  function showInst() { var b = document.querySelectorAll('.instban'); for (var i = 0; i < b.length; i++) b[i].hidden = STANDALONE; }
   /* iOS home-screen apps get their own storage, so point the installed app's start URL at the link key on this phone only. */
   if (KEY && !STANDALONE) { try {
     var base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, ''), l = document.querySelector('link[rel=manifest]');
@@ -36,6 +36,12 @@
   var SHARE = '<svg class="shr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 11v9h14v-9"/></svg>';
   function install() {
     if (DEFER) { DEFER.prompt(); DEFER.userChoice.then(function () { DEFER = null; showInst(); }); return; }
+    if (!IOS) { sheet('<div class="ios"><h3>Install Katya Calls</h3><p class="m">Adds Calls to your Home Screen like a normal app.</p><ol>' +
+      '<li><span class="n">1</span><span>Tap the <b>&#8942; menu</b> at the <b>top right</b> of Chrome.</span></li>' +
+      '<li><span class="n">2</span><span>Tap <b>Install app</b> or <b>Add to Home screen</b>.</span></li>' +
+      '<li><span class="n">3</span><span>Tap <b>Install</b>.</span></li></ol>' +
+      '<div class="note">Then open <b>Calls</b> from your Home Screen. On Samsung Internet, use the &#9776; menu at the bottom, then <b>Add page to</b> → <b>Home screen</b>.</div>' +
+      '<button class="btn w" data-act="cancel">Got it</button></div>'); return; }
     var crios = /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
     sheet('<div class="ios"><h3>Install Katya Calls</h3><p class="m">Adds the app to your Home Screen. Takes 10 seconds.</p><ol>' +
       '<li><span class="n">1</span><span>Tap the <b>Share</b> icon ' + SHARE + ' ' + (crios ? 'at the <b>top right</b> of Chrome' : 'at the <b>bottom</b> of Safari') + '.</span></li>' +
@@ -75,7 +81,7 @@
     var wk = Date.now() - 7 * 864e5, miss = cs.filter(function (c) { return new Date(c.at) > wk && /Voicemail|No answer|Failed/.test(c.outcome); });
     var r = ((ST.boot && ST.boot.routines) || []), nx = TTG() ? null : r[0];
     var hr = new Date().getHours();
-    return '<h1>' + (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + '</h1><p class="sub">' + (TTG() ? 'TTG business calls' : 'Your life calls') + '</p>' +
+    return (STANDALONE ? '' : '<button class="instban" data-act="install"><span class="ib-t">Install app</span><span class="ib-m">Put Calls on your Home Screen</span></button>') + '<h1>' + (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + '</h1><p class="sub">' + (TTG() ? 'TTG business calls' : 'Your life calls') + '</p>' +
       (nx ? '<div class="card hero"><div class="m">Scheduled routine</div><div class="big">' + esc(nx.name) + '</div><div class="m">' + esc(nx.when) + '</div><div class="actions"><a class="btn" href="#/' + ST.P + '/routines">See routines</a></div></div>'
         : '<div class="card hero"><div class="m">TTG</div><div class="big">No scheduled business calls</div><div class="m">Business calls only go out when you start one and confirm.</div><div class="actions"><a class="btn w2" href="#/ttg/new">Start a call</a></div></div>') +
       '<div class="grid2" style="margin-top:10px"><a class="tile" href="#/' + ST.P + '/calls"><b>' + td.length + '</b><span class="m">Calls today</span></a><a class="tile" href="#/' + ST.P + '/queue"><b>' + q.length + '</b><span class="m">Waiting for approval</span></a></div>' +
@@ -197,6 +203,7 @@
   V.gate = function () { return '<div class="gate"><h1>Katya Calls</h1><p class="sub">Private app</p><div class="card pad">' + (ST.err ? '<p><b>' + esc(ST.err) + '</b></p>' : '') + '<p>Open this app once from your personal link (it ends in <b>#k=…</b>). After that it remembers this phone.</p><p class="m">No calls or keys are stored in this app; they come from your private server.</p></div></div>'; };
 
   /* ---------- shell ---------- */
+  var ICO = {today: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>', calls: '<path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>', ask: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>', queue: '<path d="M4 12l5 5L20 6"/>', more: '<path d="M4 6h16M4 12h16M4 18h16"/>'};
   var NAV = [['today', '⌂', 'Today'], ['calls', '☏', 'Calls'], ['ask', '⌕', 'Ask'], ['queue', '✓', 'Approve'], ['more', '☰', 'More']];
   var TITLE = { today: 'Today', calls: 'Calls', call: 'Call', ask: 'Ask', queue: 'Approve', new: 'New', routines: 'Routines', personas: 'Personas', persona: 'Persona', insights: 'Insights', settings: 'Settings', more: 'More' };
   var PARENT = { call: 'calls', persona: 'personas', routines: 'more', personas: 'more', insights: 'more', settings: 'more', new: 'today' };
@@ -210,7 +217,7 @@
     $('#seg').innerHTML = '<button class="' + (!ttg ? 'on' : '') + '" data-p="life">Life</button><button class="' + (ttg ? 'on' : '') + '" data-p="ttg">TTG</button>';
     $('#seg').style.display = r === 'gate' ? 'none' : ''; $('#newb').style.display = r === 'gate' || r === 'new' ? 'none' : ''; $('#newb').href = '#/' + ST.P + '/new'; showInst();
     var nq = outbox().length;
-    $('#tabs').innerHTML = r === 'gate' ? '' : NAV.map(function (n) { return '<a href="#/' + ST.P + '/' + n[0] + '" class="' + (act === n[0] ? 'on' : '') + '"><span>' + n[1] + '</span>' + n[2] + (n[0] === 'queue' && nq ? '<i class="badge">' + nq + '</i>' : '') + '</a>'; }).join('');
+    $('#tabs').innerHTML = r === 'gate' ? '' : NAV.map(function (n) { return '<a href="#/' + ST.P + '/' + n[0] + '" class="' + (act === n[0] ? 'on' : '') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICO[n[0]] + '</svg>' + n[2] + (n[0] === 'queue' && nq ? ' (' + nq + ')' : '') + '</a>'; }).join('');
     var m = $('#m'); m.innerHTML = V[r](ST.route[1]);
     if (!keep) { m.style.animation = 'none'; void m.offsetHeight; m.style.animation = ''; scrollTo(0, 0); }
     var t = $('#ntask'); if (t) { var u = function () { var w = t.value.trim().split(/\s+/).filter(String).length; $('#nwords').textContent = w ? w + ' words' + (w > 120 ? ' — shorter is faster (under 120)' : '') : ''; }; t.oninput = u; u(); }
