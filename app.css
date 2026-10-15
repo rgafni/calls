@@ -110,3 +110,24 @@ nav.tabs a svg{width:26px;height:26px;display:block}
 .instban{display:flex;flex-direction:column;align-items:flex-start;width:100%;margin:8px 0 4px;border:0;border-radius:16px;background:var(--acc);color:#fff;padding:16px 18px;text-align:left;min-height:64px}
 .instban .ib-t{font-size:19px;font-weight:700}.instban .ib-m{font-size:15px;opacity:.9}
 .instb[hidden],.instban[hidden]{display:none!important}.topb .btn.inst{background:#fff;white-space:nowrap}
+
+/* v6 call settings, home, people */
+.homeb{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:6px 12px 6px 8px;margin-right:6px;border:1px solid var(--line);border-radius:12px;background:#fff;font-weight:600;font-size:16px;color:var(--ink)}
+.homeb svg{width:20px;height:20px}
+.loc{display:flex;align-items:center;flex-wrap:wrap}
+.fld{padding:14px 0;border-top:1px solid var(--line)}.card>.fld:first-child{border-top:0}
+.fh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}.fv{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.rng{width:100%;min-height:36px;padding:0;border:0;background:none;accent-color:var(--acc)}
+.reset{display:block;border:0;background:none;padding:2px 0 6px;color:var(--acc);font-size:14px;font-weight:600}
+.segs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.segs button{flex:1 1 auto;min-height:44px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:8px 12px;font-size:15px;font-weight:600;color:var(--ink)}
+.segs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.fld textarea{margin-top:8px}
+.sw.on{background:var(--ink)}
+.savebar{position:sticky;bottom:calc(76px + env(safe-area-inset-bottom));display:flex;gap:8px;padding:10px;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 20px #0001;margin-top:12px;z-index:4}.savebar .btn{flex:1}
+.voice .btn.sm{min-height:40px;padding:8px 14px}
+.favs{display:flex;gap:10px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none}.favs::-webkit-scrollbar{display:none}
+.fav{flex:none;width:78px;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding:4px 0}.fav .av{width:56px;height:56px;font-size:18px;background:#fff;border:1px solid var(--line);color:var(--ink)}.fav .fn{font-size:14px;font-weight:600}
+button.row.plain{width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left;color:inherit}.card>button.row.plain:first-child{border-top:0}
+label.btn{cursor:pointer}
+pre.json{font-family:ui-monospace,Menlo,monospace;font-size:13px;max-height:55vh;overflow:auto;background:var(--soft);padding:12px;border-radius:12px;margin:10px 0 14px}
+#newb{white-space:nowrap}

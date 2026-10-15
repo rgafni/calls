@@ -29,7 +29,7 @@
   /* In-app browsers (WebViews) never fire beforeinstallprompt; detect them so the button can hand off to real Chrome. */
   var WV = ANDROID && (/; wv\)/.test(UA) || /Version\/\d+\.\d+ Chrome/.test(UA) || /FBAN|FBAV|Instagram|Line\/|GSA\//.test(UA));
   var NOBIP = false; setTimeout(function () { if (!DEFER) NOBIP = true; }, 1500);
-  function showInst() { var b = document.querySelectorAll('.instban,.instb'); for (var i = 0; i < b.length; i++) b[i].hidden = STANDALONE; }
+  function showInst() { var b = document.querySelectorAll('.instban,.instb'), sub = ST.route && ST.route[0] !== 'today'; for (var i = 0; i < b.length; i++) b[i].hidden = STANDALONE || (sub && b[i].classList.contains('instb')); }
   if (window.__qa) window.__qa.ci = function () { return chromeIntent(); };
   function chromeIntent() {
     var base = location.href.replace(/[#?].*$/, ''), u = new URL(base);
@@ -99,7 +99,7 @@
     var wk = Date.now() - 7 * 864e5, miss = cs.filter(function (c) { return new Date(c.at) > wk && /Voicemail|No answer|Failed/.test(c.outcome); });
     var r = ((ST.boot && ST.boot.routines) || []), nx = TTG() ? null : r[0];
     var hr = new Date().getHours();
-    return (STANDALONE ? '' : '<button class="instban" data-act="install"><span class="ib-t">Install app</span><span class="ib-m">Put Calls on your Home Screen</span></button>') + '<h1>' + (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + '</h1><p class="sub">' + (TTG() ? 'TTG business calls' : 'Your life calls') + '</p>' +
+    return (STANDALONE ? '' : '<button class="instban" data-act="install"><span class="ib-t">Install app</span><span class="ib-m">Put Calls on your Home Screen</span></button>') + '<h1>' + (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + '</h1><p class="sub">' + (TTG() ? 'TTG business calls' : 'Your life calls') + '</p>' + favRow() +
       (nx ? '<div class="card hero"><div class="m">Scheduled routine</div><div class="big">' + esc(nx.name) + '</div><div class="m">' + esc(nx.when) + '</div><div class="actions"><a class="btn" href="#/' + ST.P + '/routines">See routines</a></div></div>'
         : '<div class="card hero"><div class="m">TTG</div><div class="big">No scheduled business calls</div><div class="m">Business calls only go out when you start one and confirm.</div><div class="actions"><a class="btn w2" href="#/ttg/new">Start a call</a></div></div>') +
       '<div class="grid2" style="margin-top:10px"><a class="tile" href="#/' + ST.P + '/calls"><b>' + td.length + '</b><span class="m">Calls today</span></a><a class="tile" href="#/' + ST.P + '/queue"><b>' + q.length + '</b><span class="m">Waiting for approval</span></a></div>' +
@@ -214,8 +214,101 @@
       '<h2>Privacy</h2><div class="card">' + r('Student names on TTG', 'Shown as initials', 'On') + r('Life and TTG kept apart', 'Never mixed in lists or search', 'On') + r('Keys', 'Bland key stays on the private server, never in this app') + '</div>' +
       '<h2>This phone</h2><div class="card">' + (STANDALONE ? r('Installed ✓', 'Running as the Home Screen app') : r('Not installed', 'Tap Install app at the top')) + '<button class="row link" style="width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left" data-act="forget"><div class="grow"><div class="t" style="color:#a32020">Forget this device</div><div class="m">Removes your link key from this phone</div></div></button></div>';
   };
+  /* ---------- v6: Call settings, voices, people ---------- */
+  var CST = { global: 'All calls', wake: 'Wake-up', pre_calendar: 'Calendar brief', personal: 'Personal', business: 'Business' };
+  var IRR = ['Never', 'Hard', 'Balanced', 'Easy', 'Instantly'], BG = [['none', 'Quiet'], ['static', 'Phone static'], ['office', 'Office'], ['cafe', 'Cafe'], ['restaurant', 'Restaurant']];
+  var VMA = [['hangup', 'Hang up'], ['leave_message', 'Leave message'], ['ignore', 'Keep talking']];
+  function csTypes() { return TTG() ? ['global', 'business'] : ['global', 'wake', 'pre_calendar', 'personal']; }
+  function csLoad(force) { if (ST.cs && !force) return; api('getCallSettings').then(function (j) { ST.cs = j; ST.csd = JSON.parse(JSON.stringify(j.settings)); ST.csDirty = false; draw(1); }).catch(function (x) { ST.csErr = x.message; draw(1); }); }
+  function csVal(t, k) { var d = ST.csd, o = t === 'global' ? d.global : (d.types[t] || {}); return (o[k] != null && o[k] !== '') ? o[k] : (d.global || {})[k]; }
+  function csOwn(t, k) { if (t === 'global') return false; var o = ST.csd.types[t] || {}; return o[k] != null && o[k] !== ''; }
+  function csSet(t, k, v) { var d = ST.csd; if (t === 'global') d.global[k] = v; else { d.types[t] = d.types[t] || {}; d.types[t][k] = v; } ST.csDirty = true; }
+  function voiceName(id) { var v = (ST.voices || []).filter(function (x) { return x.id === id; })[0]; return v ? v.name : (id && id.indexOf('ea40b7a4') === 0 ? 'Michelle' : 'Voice ' + String(id || '').slice(0, 6)); }
+  function fhead(t, k, label, val) { return '<div class="fh"><span class="t">' + label + '</span><span class="fv">' + val + '</span></div>' + (csOwn(t, k) ? '<button class="reset" data-csreset="' + k + '">Custom for ' + CST[t] + ' · use All calls</button>' : ''); }
+  function sw(k, on) { return '<button class="sw' + (on ? ' on' : '') + '" role="switch" aria-checked="' + !!on + '" data-cssw="' + k + '"></button>'; }
+  function tog(t, k, label, hint) { return '<div class="row"><div class="grow"><div class="t">' + label + '</div>' + (hint ? '<div class="m">' + hint + '</div>' : '') + (csOwn(t, k) ? '<button class="reset" data-csreset="' + k + '">Custom · use All calls</button>' : '') + '</div>' + sw(k, csVal(t, k)) + '</div>'; }
+  function seg(k, opts, cur) { return '<div class="segs">' + opts.map(function (o) { return '<button class="' + (String(cur) === String(o[0]) ? 'on' : '') + '" data-csseg="' + k + '" data-v="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>'; }
+  function rng(k, min, max, step, v) { return '<input type="range" class="rng" data-csr="' + k + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + v + '">'; }
+  V.callset = function () {
+    csLoad(); if (!ST.cs) return ST.csErr ? empty('Could not load settings', ST.csErr) : loading('Loading call settings…');
+    if (!ST.csT || csTypes().indexOf(ST.csT) < 0) ST.csT = 'global';
+    var t = ST.csT, it = csVal(t, 'interruptibility'), th = csVal(t, 'interruption_threshold'), vma = csVal(t, 'vm_action') || 'hangup';
+    var h = '<h1>Call settings</h1><p class="sub">How Katya behaves on calls</p>' +
+      '<div class="flabel">Applies to</div><div class="chips">' + csTypes().map(function (k) { return '<button class="chip' + (k === t ? ' on' : '') + '" data-cst="' + k + '">' + CST[k] + '</button>'; }).join('') + '</div>' +
+      (t !== 'global' ? '<p class="m">Only ' + CST[t] + ' calls. Anything not marked Custom follows All calls.</p>' : '<p class="m">Default for every call (Life and TTG).</p>') +
+      '<h2>Voice</h2><div class="card"><a class="row link" href="#/' + ST.P + '/voices"><div class="grow"><div class="t">' + esc(voiceName(csVal(t, 'voice'))) + '</div><div class="m">Tap to hear and change</div>' + (csOwn(t, 'voice') ? '<div class="m">Custom for ' + CST[t] + '</div>' : '') + '</div><span class="chev">›</span></a></div>' +
+      '<h2>Taking turns</h2><div class="card">' +
+      '<div class="fld">' + fhead(t, 'interruptibility', 'Stops when you talk over her', IRR[it]) + rng('interruptibility', 0, 4, 1, it) + '<div class="xl"><span>Never</span><span>Instantly</span></div></div>' +
+      tog(t, 'block_interruptions', 'Finish sentences no matter what', 'Ignores interruptions completely') +
+      '<div class="fld">' + fhead(t, 'interruption_threshold', 'Pause before she replies', th === 'auto' ? 'Auto' : th + ' ms') + (th === 'auto' ? '' : rng('interruption_threshold', 50, 1000, 10, th) + '<div class="xl"><span>Quick</span><span>Patient</span></div>') +
+      '<div class="row"><div class="grow"><div class="t">Let Bland decide</div><div class="m">Adapts to how you speak</div></div><button class="sw' + (th === 'auto' ? ' on' : '') + '" data-csauto="1"></button></div></div>' +
+      tog(t, 'wait_for_greeting', 'Wait for "hello" first', 'Off: Katya speaks as soon as you pick up') + '</div>' +
+      '<h2>Speech</h2><div class="card"><div class="fld">' + fhead(t, 'temperature', 'Creativity', (+csVal(t, 'temperature')).toFixed(2)) + rng('temperature', 0, 1, 0.05, csVal(t, 'temperature')) + '<div class="xl"><span>Predictable</span><span>Varied</span></div></div>' +
+      '<div class="fld">' + fhead(t, 'model', 'Model', csVal(t, 'model') === 'turbo' ? 'Turbo' : 'Base') + seg('model', [['base', 'Base · follows script'], ['turbo', 'Turbo · faster']], csVal(t, 'model')) + '</div></div>' +
+      '<h2>Call</h2><div class="card"><div class="fld">' + fhead(t, 'max_duration', 'Longest call', csVal(t, 'max_duration') + ' min') + rng('max_duration', 1, 30, 1, csVal(t, 'max_duration')) + '</div>' +
+      tog(t, 'noise_cancellation', 'Filter background noise', 'Helps in loud places; can cut soft speech') +
+      '<div class="fld">' + fhead(t, 'background_track', 'Background sound', (BG.filter(function (b) { return b[0] === csVal(t, 'background_track'); })[0] || BG[0])[1]) + seg('background_track', BG, csVal(t, 'background_track') || 'none') + '</div></div>' +
+      '<h2>Voicemail</h2><div class="card"><div class="fld">' + fhead(t, 'vm_action', 'If voicemail answers', (VMA.filter(function (b) { return b[0] === vma; })[0] || VMA[0])[1]) + seg('vm_action', VMA, vma) +
+      (vma === 'leave_message' ? '<textarea id="csvm" rows="3" maxlength="400" placeholder="Message to leave">' + esc(csVal(t, 'vm_message') || '') + '</textarea>' : '') + '</div>' +
+      tog(t, 'vm_sensitive', 'Smarter voicemail detection', 'Slower, fewer mistakes') + '</div>' +
+      '<div class="btns" style="margin-top:6px"><button class="btn ghost" data-act="csPreview">See what is sent</button></div>' +
+      '<p class="m">Used by app calls and Katya’s routine calls. Shabbat, AI disclosure and limits still apply.</p>' +
+      (ST.csDirty ? '<div class="savebar"><button class="btn ghost" data-act="csUndo">Undo</button><button class="btn" data-act="csSave">Save</button></div>' : '<p class="m">Saved · version ' + (ST.cs.settings.rev || 0) + '</p>');
+    return h;
+  };
+  V.voices = function () {
+    csLoad(); var t = ST.csT || 'global';
+    if (!ST.voices && !ST.vLoading) { ST.vLoading = true; api('voices2').then(function (j) { ST.voices = j.voices; }).catch(function (x) { ST.voices = []; toast(x.message); }).then(function () { ST.vLoading = false; draw(1); }); }
+    if (!ST.voices || !ST.cs) return loading('Loading voices…');
+    var cur = csVal(t, 'voice');
+    return '<h1>Voice</h1><p class="sub">For ' + CST[t] + (t === 'global' ? '' : ' calls') + '</p><div class="chips">' + csTypes().map(function (k) { return '<button class="chip' + (k === t ? ' on' : '') + '" data-cst="' + k + '">' + CST[k] + '</button>'; }).join('') + '</div>' +
+      '<div class="card">' + ST.voices.map(function (v) {
+        var on = v.id === cur;
+        return '<div class="voice"><div class="grow"><div class="t">' + esc(v.name) + (on ? ' <span class="tag acc">In use</span>' : '') + '</div><div class="m">' + esc(v.d) + '</div></div>' +
+          (v.pv ? '<button class="btn sm ghost" data-play="' + esc(v.id) + '">' + (ST.playing === v.id ? 'Stop' : 'Play') + '</button>' : '<span class="m" style="font-size:13px">No preview</span>') +
+          (on ? '' : '<button class="btn sm" data-setvoice="' + esc(v.id) + '">Use</button>') + '</div>';
+      }).join('') + '</div>' + (ST.csDirty ? '<div class="savebar"><button class="btn ghost" data-act="csUndo">Undo</button><button class="btn" data-act="csSave">Save</button></div>' : '') +
+      '<p class="m">Preview is a short sample in that voice. Some older voices have no preview.</p>';
+  };
+  var people = function () { return ((ST.boot && ST.boot.contacts) || []); };
+  function favRow() {
+    var f = people().filter(function (c) { return c.fav && (c.portal || 'life') === ST.P; }); if (!f.length) return '';
+    return '<h2>Favorites <a href="#/' + ST.P + '/people">Edit</a></h2><div class="favs">' + f.map(function (c) { var i = people().indexOf(c);
+      return '<button class="fav" data-person="' + i + '"><span class="av">' + esc(ini(c.name)) + '</span><span class="fn">' + esc(c.name) + '</span></button>'; }).join('') + '</div>';
+  }
+  V.people = function () {
+    var ps = people(), pick = 'contacts' in navigator && 'ContactsManager' in window;
+    return '<h1>People</h1><p class="sub">Favorites and contacts. Private to you.</p>' +
+      '<div class="btns"><button class="btn ghost" data-act="pAdd">Add person</button>' + (pick ? '<button class="btn ghost" data-act="pPick">Import from phone</button>' : '<label class="btn ghost">Import .vcf<input type="file" id="vcf" accept=".vcf,text/vcard,text/x-vcard" hidden></label>') + '</div>' +
+      (ps.length ? '<div class="card" style="margin-top:12px">' + ps.map(function (c, i) {
+        return '<button class="row link plain" data-person="' + i + '"><div class="av">' + esc(ini(c.name)) + '</div><div class="grow"><div class="t">' + esc(c.name) + '</div><div class="m">' + (c.num ? esc(fmtNum(c.num)) : 'No number yet') + ' · ' + (c.portal === 'ttg' ? 'TTG' : 'Life') + '</div></div>' + (c.fav ? '<span class="tag">Favorite</span>' : '') + '<span class="chev">›</span></button>'; }).join('') + '</div>' : empty('No people yet')) +
+      '<p class="m">Calls from here open your phone’s dialer. Katya never auto-calls Nina.</p>';
+  };
+  function personSheet(i) {
+    var c = people()[i] || { name: '', num: '', email: '', fav: true, portal: ST.P }, n = String(c.num || '').replace(/[^\d+]/g, '');
+    sheet('<h3 style="margin:0 0 6px">' + esc(c.name || 'New person') + '</h3>' + (n ? '<div class="btns" style="margin-bottom:14px"><a class="btn" href="tel:' + esc(n) + '">Call from my phone</a><a class="btn ghost" href="sms:' + esc(n) + '">Text</a></div>' : (c.name ? '<p class="m">Add a number to call or text.</p>' : '')) +
+      '<div class="flabel">Name</div><input id="pn" value="' + esc(c.name) + '"><div class="flabel">Phone</div><input id="pt" type="tel" inputmode="tel" value="' + esc(c.num || '') + '" placeholder="Not set"><div class="flabel">Email</div><input id="pe" type="email" value="' + esc(c.email || '') + '" placeholder="Not set">' +
+      '<div class="row"><div class="grow"><div class="t">Favorite</div></div><button class="sw' + (c.fav ? ' on' : '') + '" id="pf" data-pfav="1"></button></div>' +
+      '<div class="btns">' + (people()[i] ? '<button class="btn red" data-pdel="' + i + '">Remove</button>' : '') + '<button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-psave="' + (people()[i] ? i : -1) + '">Save</button></div>');
+  }
+  function savePeople(list, msg) { return api('saveContacts2', { list: list }).then(function (j) { ST.boot.contacts = j.contacts; toast(msg || 'Saved'); draw(1); }).catch(function (x) { toast(x.message); }); }
+  function mergePeople(add) { var ps = people().slice(), names = {}; ps.forEach(function (c) { names[c.name.toLowerCase()] = c; }); var n = 0;
+    add.forEach(function (a) { if (!a.name) return; var e = names[a.name.toLowerCase()]; if (e) { if (!e.num && a.num) e.num = a.num; if (!e.email && a.email) e.email = a.email; } else { ps.push({ name: a.name, num: a.num || '', email: a.email || '', fav: false, portal: ST.P }); n++; } });
+    return savePeople(ps, n + ' added'); }
+  function parseVcf(txt) { return txt.replace(/\r\n[ \t]/g, '').split(/BEGIN:VCARD/i).slice(1).map(function (b) {
+    var g = function (re) { var m = re.exec(b); return m ? m[1].trim() : ''; };
+    return { name: g(/^FN[^:\n]*:(.+)$/im) || g(/^N[^:\n]*:([^;\n]*)/im), num: g(/^TEL[^:\n]*:(.+)$/im), email: g(/^EMAIL[^:\n]*:(.+)$/im) }; }).slice(0, 300); }
+  function playVoice(id) {
+    if (ST.audio) { ST.audio.pause(); ST.audio = null; } if (ST.playing === id) { ST.playing = null; return draw(1); }
+    ST.playing = id; draw(1); var u = './voice-sample/' + id + '.wav';
+    var get = (window.caches ? caches.open('calls-voice-v1').then(function (c) { return c.match(u).then(function (r) { return r || api('voiceSample', { id: id }).then(function (j) {
+      var bin = atob(j.b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+      var res = new Response(new Blob([a], { type: j.mime })); return c.put(u, res.clone()).then(function () { return res; }); }); }); }) : Promise.reject(new Error('No audio cache')));
+    get.then(function (r) { return r.blob(); }).then(function (b) { if (ST.playing !== id) return; var au = new Audio(URL.createObjectURL(b)); ST.audio = au; au.onended = function () { ST.playing = null; draw(1); }; return au.play(); })
+      .catch(function (x) { ST.playing = null; toast(x.message); draw(1); });
+  }
   V.more = function () {
-    var it = [['routines', 'Routines', 'Scheduled calls and pauses'], ['personas', 'Personas', 'Voice and instructions'], ['insights', 'Insights', 'Answer rate and talk time'], ['new', 'New call, text or email', ''], ['settings', 'Settings', 'Safety, privacy, this phone']];
+    var it = [['callset', 'Call settings', 'Voice, turn-taking, voicemail'], ['people', 'People', 'Favorites and contacts'], ['routines', 'Routines', 'Scheduled calls and pauses'], ['personas', 'Personas', 'Voice and instructions'], ['insights', 'Insights', 'Answer rate and talk time'], ['new', 'New call, text or email', ''], ['settings', 'Settings', 'Safety, privacy, this phone']];
     return '<h1>More</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p>' + (STANDALONE ? '<div class="card"><div class="row"><div class="grow"><div class="t">Installed ✓</div><div class="m">This is the Home Screen app</div></div></div></div>' : '') + '<div class="card">' + it.map(function (i) { return '<a class="row link" href="#/' + ST.P + '/' + i[0] + '"><div class="grow"><div class="t">' + i[1] + '</div>' + (i[2] ? '<div class="m">' + i[2] + '</div>' : '') + '</div><span class="chev">›</span></a>'; }).join('') + '</div>';
   };
   V.gate = function () { return '<div class="gate"><h1>Katya Calls</h1><p class="sub">Private app</p><div class="card pad">' + (ST.err ? '<p><b>' + esc(ST.err) + '</b></p>' : '') + '<p>Open this app once from your personal link (it ends in <b>#k=…</b>). After that it remembers this phone.</p><p class="m">No calls or keys are stored in this app; they come from your private server.</p></div></div>'; };
@@ -223,15 +316,15 @@
   /* ---------- shell ---------- */
   var ICO = {today: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>', calls: '<path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>', ask: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>', queue: '<path d="M4 12l5 5L20 6"/>', more: '<path d="M4 6h16M4 12h16M4 18h16"/>'};
   var NAV = [['today', '⌂', 'Today'], ['calls', '☏', 'Calls'], ['ask', '⌕', 'Ask'], ['queue', '✓', 'Approve'], ['more', '☰', 'More']];
-  var TITLE = { today: 'Today', calls: 'Calls', call: 'Call', ask: 'Ask', queue: 'Approve', new: 'New', routines: 'Routines', personas: 'Personas', persona: 'Persona', insights: 'Insights', settings: 'Settings', more: 'More' };
-  var PARENT = { call: 'calls', persona: 'personas', routines: 'more', personas: 'more', insights: 'more', settings: 'more', new: 'today' };
+  var TITLE = { today: 'Today', calls: 'Calls', call: 'Call', ask: 'Ask', queue: 'Approve', new: 'New', routines: 'Routines', personas: 'Personas', persona: 'Persona', insights: 'Insights', settings: 'Settings', more: 'More', callset: 'Call settings', voices: 'Voice', people: 'People' };
+  var PARENT = { call: 'calls', persona: 'personas', routines: 'more', personas: 'more', insights: 'more', settings: 'more', new: 'today', callset: 'more', voices: 'callset', people: 'more' };
   function parse() { var h = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean); if (h[0] === 'life' || h[0] === 'ttg') { ST.P = h.shift(); localStorage.setItem('calls.p', ST.P); } ST.route = h.length ? h : ['today']; if (!V[ST.route[0]] || ST.route[0] === 'gate') ST.route = ['today']; }
   function draw(keep) {
     var r = KEY && !ST.fatal ? ST.route[0] : 'gate', ttg = TTG();
     document.documentElement.style.setProperty('--acc', ttg ? 'var(--ttg)' : 'var(--life)'); document.documentElement.style.setProperty('--accs', ttg ? '#e3f2ec' : '#e8eefc');
-    var act = PARENT[r] && r !== 'new' ? (r === 'call' ? 'calls' : 'more') : r, par = PARENT[r];
+    var act = PARENT[r] && r !== 'new' ? (r === 'call' ? 'calls' : 'more') : r, home = r !== 'today' && r !== 'gate', par = PARENT[r];
     if (r === 'call' && ST.from === 'ask') par = 'ask';
-    $('#loc').innerHTML = par ? '<a class="backl" href="#/' + ST.P + '/' + par + '">‹ ' + TITLE[par] + '</a>' : '<div class="brand">Katya Calls<small>Roni · ' + (ttg ? 'TTG' : 'Life') + '</small></div>';
+    $('#loc').innerHTML = (home ? '<a class="homeb" href="#/' + ST.P + '/today" aria-label="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Home</a>' : '') + (par ? '<a class="backl" href="#/' + ST.P + '/' + par + '">‹ ' + TITLE[par] + '</a>' : '<div class="brand">Katya Calls<small>Roni · ' + (ttg ? 'TTG' : 'Life') + '</small></div>');
     $('#seg').innerHTML = '<button class="' + (!ttg ? 'on' : '') + '" data-p="life">Life</button><button class="' + (ttg ? 'on' : '') + '" data-p="ttg">TTG</button>';
     $('#seg').style.display = r === 'gate' ? 'none' : ''; $('#newb').style.display = r === 'gate' || r === 'new' ? 'none' : ''; $('#newb').href = '#/' + ST.P + '/new'; showInst();
     var nq = outbox().length;
@@ -253,6 +346,25 @@
     var d = t.dataset;
     if (d.p) { ST.P = d.p; localStorage.setItem('calls.p', ST.P); ST.ask = null; ST.f = { type: 'All', person: '', persona: '' }; var r0 = ST.route[0]; go(/^(call|persona)$/.test(r0) ? PARENT[r0] : r0); return; }
     if (t.matches('a.hit')) ST.from = 'ask'; else if (t.matches('a.row')) ST.from = '';
+    if (d.cst) { ST.csT = d.cst; draw(1); return; }
+    if (d.cssw) { csSet(ST.csT, d.cssw, !csVal(ST.csT, d.cssw)); draw(1); return; }
+    if (d.csauto) { csSet(ST.csT, 'interruption_threshold', csVal(ST.csT, 'interruption_threshold') === 'auto' ? 160 : 'auto'); draw(1); return; }
+    if (d.csseg) { csSet(ST.csT, d.csseg, d.v); draw(1); return; }
+    if (d.csreset) { delete ST.csd.types[ST.csT][d.csreset]; ST.csDirty = true; draw(1); return; }
+    if (d.setvoice) { csSet(ST.csT, 'voice', d.setvoice); draw(1); return; }
+    if (d.play) { playVoice(d.play); return; }
+    if (d.act === 'csUndo') { ST.csd = JSON.parse(JSON.stringify(ST.cs.settings)); ST.csDirty = false; draw(1); return; }
+    if (d.act === 'csSave') { var vm = $('#csvm'); if (vm) csSet(ST.csT, 'vm_message', vm.value); t.disabled = true;
+      api('saveCallSettings', { settings: ST.csd }).then(function (j) { ST.cs = j; ST.csd = JSON.parse(JSON.stringify(j.settings)); ST.csDirty = false; toast('Saved. Next calls use this.'); draw(1); }).catch(function (x) { t.disabled = false; toast(x.message); }); return; }
+    if (d.act === 'csPreview') { var ty = ST.csT === 'global' ? (TTG() ? 'business' : 'personal') : ST.csT;
+      api('previewCall', { type: ty }).then(function (j) { sheet('<h3 style="margin:0 0 4px">Sent to Bland for ' + CST[ty] + '</h3><p class="m">Saved settings only. Nothing is called.</p><pre class="prompt json">' + esc(JSON.stringify(j.body, null, 1)) + '</pre><button class="btn w" data-act="cancel">Close</button>'); }).catch(function (x) { toast(x.message); }); return; }
+    if (d.person) { personSheet(+d.person); return; }
+    if (d.act === 'pAdd') { personSheet(-1); return; }
+    if (d.pfav) { t.classList.toggle('on'); return; }
+    if (d.psave) { var i = +d.psave, ps = people().slice(), c = { name: $('#pn').value.trim(), num: $('#pt').value.trim(), email: $('#pe').value.trim(), fav: $('#pf').classList.contains('on'), portal: (ps[i] || {}).portal || ST.P };
+      if (!c.name) return toast('Add a name'); if (/^nina\b/i.test(c.name)) c.nobot = true; if (i >= 0) ps[i] = c; else ps.push(c); closeSheet(); savePeople(ps); return; }
+    if (d.pdel) { var ps2 = people().slice(); ps2.splice(+d.pdel, 1); closeSheet(); savePeople(ps2, 'Removed'); return; }
+    if (d.act === 'pPick') { navigator.contacts.select(['name', 'tel', 'email'], { multiple: true }).then(function (l) { return mergePeople(l.map(function (x) { return { name: (x.name || [])[0], num: (x.tel || [])[0], email: (x.email || [])[0] }; })); }).catch(function (x) { toast(x.message); }); return; }
     if (d.ft) { ST.f.type = d.ft; draw(1); }
     if (d.ex) { ST.askq = d.ex; doAsk(); }
     if (d.ch) { saveDraft(); ST.ch = d.ch; draw(1); }
@@ -268,9 +380,14 @@
         '<div class="btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="placeCall">Call now</button></div>'); }
     if (d.act === 'cancel') closeSheet();
     if (d.act === 'install') install();
-    if (d.act === 'placeCall') { t.disabled = true; api('start', { to: ST.draft.to, task: ST.draft.task }).then(function (j) { closeSheet(); ST.draft = {}; toast('Calling… it will show in Calls'); go('calls'); setTimeout(load, 8000); }).catch(function (x) { closeSheet(); toast(x.message); }); }
+    if (d.act === 'placeCall') { t.disabled = true; api('start', { to: ST.draft.to, task: ST.draft.task, portal: ST.P }).then(function (j) { closeSheet(); ST.draft = {}; toast('Calling… it will show in Calls'); go('calls'); setTimeout(load, 8000); }).catch(function (x) { closeSheet(); toast(x.message); }); }
     if (d.act === 'forget') { if (confirm('Forget the link key on this phone?')) { localStorage.removeItem('calls.k'); location.replace(location.pathname); } }
   });
+  document.addEventListener('input', function (e) { var k = e.target.dataset && e.target.dataset.csr; if (!k) return; var v = +e.target.value; csSet(ST.csT, k, v);
+    var fv = e.target.parentNode.querySelector('.fv'); if (fv) fv.textContent = k === 'interruptibility' ? IRR[v] : k === 'temperature' ? v.toFixed(2) : k === 'max_duration' ? v + ' min' : v + ' ms'; });
+  document.addEventListener('change', function (e) { if (e.target.dataset && e.target.dataset.csr) draw(1);
+    if (e.target.id === 'csvm') { csSet(ST.csT, 'vm_message', e.target.value); draw(1); }
+    if (e.target.id === 'vcf' && e.target.files[0]) { e.target.files[0].text().then(function (x) { var l = parseVcf(x); if (!l.length) return toast('No contacts found in that file'); mergePeople(l); }); } });
   document.addEventListener('change', function (e) { if (e.target.id === 'fperson') { ST.f.person = e.target.value; draw(1); } if (e.target.id === 'fpersona') { ST.f.persona = e.target.value; draw(1); } });
   function doAsk() { ST.asking = true; draw(1); api('ask', { q: ST.askq, portal: ST.P }).then(function (j) { ST.ask = j; }).catch(function (x) { ST.ask = { err: x.message }; }).then(function () { ST.asking = false; draw(1); }); }
   document.addEventListener('submit', function (e) { if (e.target.id === 'askf') { e.preventDefault(); ST.askq = $('#cq').value.trim(); if (ST.askq) doAsk(); } });

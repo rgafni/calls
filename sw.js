@@ -1,13 +1,13 @@
 /* App shell only. Never caches call data: API requests go to the private backend and are not intercepted.
    Network-first (bypassing the HTTP cache) for every shell request; cache is only an offline fallback. */
-var V = 'calls-v5-0', SHELL = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
+var V = 'calls-v6-0', SHELL = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(V).then(function (c) {
     return Promise.all(SHELL.map(function (p) { return fetch(new Request(p, { cache: 'no-store' })).then(function (r) { if (r.ok) return c.put(p, r); }); }));
   }).catch(function () {}).then(function () { return self.skipWaiting(); }));
 });
 self.addEventListener('activate', function (e) {
-  e.waitUntil(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k !== V; }).map(function (k) { return caches.delete(k); })); })
+  e.waitUntil(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k !== V && k.indexOf('calls-voice') !== 0; }).map(function (k) { return caches.delete(k); })); })
     .then(function () { return self.clients.claim(); })
     .then(function () { return self.clients.matchAll({ type: 'window' }); })
     .then(function (cs) { cs.forEach(function (c) { c.postMessage({ type: 'sw-updated', v: V }); try { c.navigate(c.url).catch(function () {}); } catch (x) {} }); }));
