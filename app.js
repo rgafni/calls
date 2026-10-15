@@ -259,5 +259,15 @@
   $('#sheet').addEventListener('click', function (e) { if (e.target.id === 'sheet') closeSheet(); });
   addEventListener('hashchange', function () { parse(); draw(); });
   parse(); draw(); load();
-  if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') navigator.serviceWorker && navigator.serviceWorker.register('sw.js').catch(function () {});
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    var swc = navigator.serviceWorker, hadCtl = !!swc.controller, reloaded = false;
+    var reloadOnce = function () { if (reloaded || !hadCtl) return; reloaded = true; location.reload(); };
+    swc.addEventListener('controllerchange', reloadOnce);
+    swc.addEventListener('message', function (e) { if (e.data && e.data.type === 'sw-updated') reloadOnce(); });
+    swc.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+      reg.update().catch(function () {});
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') reg.update().catch(function () {}); });
+      addEventListener('focus', function () { reg.update().catch(function () {}); });
+    }).catch(function () {});
+  }
 })();
