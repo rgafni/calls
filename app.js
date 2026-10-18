@@ -81,7 +81,25 @@
   function outTag(o) { var c = /^Answered$/.test(o) ? 'good' : /Voicemail|No answer|unclear|progress/.test(o) ? 'warn' : /Failed/.test(o) ? 'bad' : ''; return '<span class="tag ' + c + '">' + esc(o || 'Unknown') + '</span>'; }
   function guessTag(c) { return c.sure === false ? '<span class="tag guess" title="' + esc(c.why) + '">Type is a guess</span>' : ''; }
   function ini(n) { n = String(n || '?'); return /^(You|Me)$/.test(n) ? 'Me' : n.replace(/[^A-Za-z. ]/g, '').split(/\s+/).map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase() || '#'; }
-  var calls = function () { return (ST.calls || []).filter(function (c) { return (c.portal || 'life') === ST.P; }); };
+  var calls = function () { return (ST.calls || []).filter(function (c) { return (c.portal || 'life') === ST.P && canSee(c); }); };
+  /* ---------- phone line (kid agents) ----------
+     Provisional. Nothing about the new setup lives in this public file: agent names, who they serve and their calls all come
+     from the private backend (boot.lineSetup), and only render when CALLS_CONFIG.LINE_AGENTS_LIVE is true (default false).
+     Flag off, or no lineSetup from the backend: the line shows the current setup, Katya on every call and text. */
+  var LIVE_FLAG = C.LINE_AGENTS_LIVE === true;
+  var ROUTE_OK = { on: ['good', 'On'], paused: ['warn', 'Paused'], problem: ['bad', 'Needs attention'] };
+  function isRoni() { return !!(ST.boot && ST.boot.who === 'Roni'); }
+  // Kid calls (flagged by the backend) are shown only to Roni's own key, never to the agent or QA keys.
+  function canSee(c) { return !c || !c.kid || isRoni(); }
+  function lineSetup() {
+    var ls = LIVE_FLAG && ST.boot && ST.boot.lineSetup;
+    if (!ls || !Array.isArray(ls.agents) || !Array.isArray(ls.routes)) return null;
+    var ag = ls.agents.filter(function (a) { return a && a.id && a.name && ROUTE_OK[a.status] && (!a.kid || isRoni()); }); // hide anything not live
+    if (!ag.length) return null;
+    var ids = {}; ag.forEach(function (a) { ids[a.id] = a; });
+    return { agents: ag, byId: ids, routes: ls.routes.filter(function (r) { return r && r.label && ids[r.agent]; }) };
+  }
+  function agentName(c) { var ls = c && c.agent && lineSetup(), a = ls && ls.byId[c.agent]; return a ? a.name : 'Katya'; }
   var outbox = function () { return ((ST.boot && ST.boot.outbox) || []).filter(function (x) { return x.portal === ST.P && x.status === 'draft'; }); };
   var personas = function () { return ((ST.boot && ST.boot.personaInfo) || []).filter(function (p) { return p.portal === ST.P; }); };
   function loading(t) { return '<div class="empty"><div class="t"><span class="spin"></span>' + esc(t || 'Loading your calls…') + '</div></div>'; }
@@ -135,10 +153,10 @@
     return '<h1>' + esc(c.type || 'Call') + '</h1><p class="sub">' + esc(c.person) + ' · ' + esc(when(c.at)) + '</p>' +
       '<div class="btns" style="margin-bottom:12px">' + outTag(c.outcome) + '<span class="tag">' + (c.inbound ? 'Incoming' : 'Outgoing') + '</span>' + guessTag(c) + '</div>' +
       (c.sure === false ? '<div class="note" style="margin-bottom:10px"><b>Why this type:</b> ' + esc(c.why) + '. It is a best guess from the first sentence and transcript.</div>' : '') +
-      '<div class="stat"><div><b>' + esc(dur(c.min)) + '</b><span class="m">Length</span></div><div><b>' + esc(c.turns != null ? c.turns : '—') + '</b><span class="m">Lines spoken</span></div><div><b>' + (c.lat != null ? esc(c.lat) + 's' : '—') + '</b><span class="m">Avg. gap per reply</span></div></div>' +
+      '<div class="stat"><div><b>' + esc(dur(c.min)) + '</b><span class="m">Length</span></div><div><b>' + esc(c.turns != null ? c.turns : 'n/a') + '</b><span class="m">Lines spoken</span></div><div><b>' + (c.lat != null ? esc(c.lat) + 's' : 'n/a') + '</b><span class="m">Avg. gap per reply</span></div></div>' +
       '<h2>Summary</h2><div class="card pad sumtxt">' + (c.summary ? esc(c.summary) : '<span class="m">No summary from Bland for this call.</span>') + '</div>' +
       (c.err ? '<div class="note warnbox">Error: ' + esc(c.err) + '</div>' : '') +
-      '<h2>Transcript</h2>' + (!d ? loading('Loading transcript…') : tr && tr.length ? '<div class="tr">' + tr.map(function (t) { var k = t.u === 'user'; return '<div class="who ' + (k ? 'r' : '') + '">' + (k ? esc(c.person === 'You' ? 'You' : c.person) : (t.u === 'assistant' ? 'Katya' : esc(t.u))) + '</div><div class="bub ' + (k ? 'u' : 'k') + '">' + esc(t.t) + '</div>'; }).join('') + '</div>' : '<div class="card pad m">No transcript (the call was not picked up or was too short).</div>') +
+      '<h2>Transcript</h2>' + (!d ? loading('Loading transcript…') : tr && tr.length ? '<div class="tr">' + tr.map(function (t) { var k = t.u === 'user'; return '<div class="who ' + (k ? 'r' : '') + '">' + (k ? esc(c.person === 'You' ? 'You' : c.person) : (t.u === 'assistant' ? esc(agentName(c)) : esc(t.u))) + '</div><div class="bub ' + (k ? 'u' : 'k') + '">' + esc(t.t) + '</div>'; }).join('') + '</div>' : '<div class="card pad m">No transcript (the call was not picked up or was too short).</div>') +
       '<h2>Actions</h2><div class="btns"><a class="btn ghost" href="#/' + ST.P + '/ask">Ask across calls</a>' + (!c.inbound ? '<button class="btn" data-again="' + esc(c.to) + '">Call again…</button>' : '') + '</div>';
   };
   V.ask = function () {
@@ -183,7 +201,7 @@
         '<div class="kv"><span class="m">Voicemail</span><span style="text-align:right;max-width:65%">' + esc(x.vm) + '</span></div><p class="m">' + esc(x.rules) + '</p></div>'; }).join('')
       : empty(TTG() ? 'No TTG routines' : 'No routines', TTG() ? 'Business calls are started one at a time from New.' : '')) +
       '<h2>Everywhere</h2><div class="card"><div class="row"><div class="grow"><div class="t">Shabbat & Yom Tov</div><div class="m">All calls blocked from candle lighting to havdalah (checked by the server)</div></div><span class="tag good">Always on</span></div></div>' +
-      '<p class="m">To change a time or turn one off, ask your assistant in chat. Editing here comes next.</p>';
+      '<p class="m">To change a time or turn one off, ask your assistant in chat.</p>';
   };
   V.personas = function () {
     var ps = personas(), cs = calls();
@@ -204,12 +222,12 @@
     var cs = calls(); if (!cs.length) return empty('No calls yet');
     var a = cs.filter(function (c) { return /^Answered/.test(c.outcome); }).length, mins = cs.reduce(function (s, c) { return s + (+c.min || 0); }, 0), L = cs.filter(function (c) { return c.lat != null; });
     var by = {}; cs.forEach(function (c) { var b = by[c.type] = by[c.type] || [0, 0]; b[0]++; if (/^Answered/.test(c.outcome)) b[1]++; });
-    return '<h1>Insights</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + ' · all ' + cs.length + ' calls</p><div class="stat"><div><b>' + Math.round(a / cs.length * 100) + '%</b><span class="m">Answered</span></div><div><b>' + Math.round(mins) + 'm</b><span class="m">Talk time</span></div><div><b>' + (L.length ? (L.reduce(function (s, c) { return s + c.lat; }, 0) / L.length).toFixed(1) + 's' : '—') + '</b><span class="m">Avg. reply gap</span></div></div>' +
+    return '<h1>Insights</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + ' · all ' + cs.length + ' calls</p><div class="stat"><div><b>' + Math.round(a / cs.length * 100) + '%</b><span class="m">Answered</span></div><div><b>' + Math.round(mins) + 'm</b><span class="m">Talk time</span></div><div><b>' + (L.length ? (L.reduce(function (s, c) { return s + c.lat; }, 0) / L.length).toFixed(1) + 's' : 'n/a') + '</b><span class="m">Avg. reply gap</span></div></div>' +
       '<h2>By type</h2><div class="card">' + Object.keys(by).map(function (k) { var b = by[k]; return '<div class="row"><div class="grow"><div class="t">' + esc(k) + '</div><div class="bar" style="margin-top:6px"><i style="width:' + Math.round(b[1] / b[0] * 100) + '%"></i></div></div><span class="m">' + b[1] + ' of ' + b[0] + ' answered</span></div>'; }).join('') + '</div>';
   };
   V.settings = function () {
     var b = ST.boot || {}, r = function (t, s, tag) { return '<div class="row"><div class="grow"><div class="t">' + t + '</div>' + (s ? '<div class="m">' + s + '</div>' : '') + '</div>' + (tag ? '<span class="tag">' + tag + '</span>' : '') + '</div>'; };
-    return '<h1>Settings</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p><h2>Calling line</h2><div class="card">' + r('Katya’s number', esc(fmtNum(b.line || ''))) + r('Data source', b.hasKey ? 'Live from Bland' : 'Saved copy (Bland not connected)', b.hasKey ? 'Live' : 'Saved') + '</div>' +
+    return '<h1>Settings</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p><h2>Calling line</h2><div class="card">' + r('Katya’s number', esc(fmtNum(b.line || ''))) + (TTG() ? '' : '<a class="row link" href="#/life/line"><div class="grow"><div class="t">Who answers</div><div class="m">' + (lineSetup() ? 'Agents by caller' : 'Katya, every call and text') + '</div></div><span class="chev">›</span></a>') + r('Data source', b.hasKey ? 'Live from Bland' : 'Saved copy (Bland not connected)', b.hasKey ? 'Live' : 'Saved') + '</div>' +
       '<h2>Safety</h2><div class="card">' + r('Texts & emails need approval', 'No automatic sending exists', 'Always') + r('Calls need a confirm tap', '', 'Always') + r('Business calls say they are AI', 'Added by the server', 'Always') + r('Daily call limit', '20 calls a day', 'On') + r('Shabbat & Yom Tov', 'Calls blocked', 'On') + '</div>' +
       '<h2>Privacy</h2><div class="card">' + r('Student names on TTG', 'Shown as initials', 'On') + r('Life and TTG kept apart', 'Never mixed in lists or search', 'On') + r('Keys', 'Bland key stays on the private server, never in this app') + '</div>' +
       '<h2>This phone</h2><div class="card">' + (STANDALONE ? r('Installed ✓', 'Running as the Home Screen app') : r('Not installed', 'Tap Install app at the top')) + '<button class="row link" style="width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left" data-act="forget"><div class="grow"><div class="t" style="color:#a32020">Forget this device</div><div class="m">Removes your link key from this phone</div></div></button></div>';
@@ -308,16 +326,29 @@
       .catch(function (x) { ST.playing = null; toast(x.message); draw(1); });
   }
   V.more = function () {
-    var it = [['callset', 'Call settings', 'Voice, turn-taking, voicemail'], ['people', 'People', 'Favorites and contacts'], ['routines', 'Routines', 'Scheduled calls and pauses'], ['personas', 'Personas', 'Voice and instructions'], ['insights', 'Insights', 'Answer rate and talk time'], ['new', 'New call, text or email', ''], ['settings', 'Settings', 'Safety, privacy, this phone']];
+    var it = [['callset', 'Call settings', 'Voice, turn-taking, voicemail'], ['people', 'People', 'Favorites and contacts'], ['routines', 'Routines', 'Scheduled calls and pauses'], ['personas', 'Personas', 'Voice and instructions']].concat(TTG() ? [] : [['line', 'Phone line', 'Who answers each caller']]).concat([ ['insights', 'Insights', 'Answer rate and talk time'], ['new', 'New call, text or email', ''], ['settings', 'Settings', 'Safety, privacy, this phone']]);
     return '<h1>More</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p>' + (STANDALONE ? '<div class="card"><div class="row"><div class="grow"><div class="t">Installed ✓</div><div class="m">This is the Home Screen app</div></div></div></div>' : '') + '<div class="card">' + it.map(function (i) { return '<a class="row link" href="#/' + ST.P + '/' + i[0] + '"><div class="grow"><div class="t">' + i[1] + '</div>' + (i[2] ? '<div class="m">' + i[2] + '</div>' : '') + '</div><span class="chev">›</span></a>'; }).join('') + '</div>';
+  };
+  V.line = function () {
+    var ls = lineSetup();
+    var head = '<h1>Phone line</h1><p class="sub">Who answers calls and texts on Katya’s line</p>';
+    if (!ls) return head + '<div class="card"><div class="row"><div class="av">K</div><div class="grow"><div class="t">Katya</div><div class="m">Answers every call and text on this line</div></div><span class="tag good">On</span></div></div>' +
+      '<h2>Callers</h2><div class="card"><div class="row"><div class="grow"><div class="t">Everyone</div><div class="m">Calls and texts</div></div><span class="tag">Katya</span></div></div>';
+    var pool = (ST.calls || []).filter(canSee);
+    return head + '<h2>Who handles whom</h2><div class="card">' + ls.routes.map(function (r) {
+        return '<div class="row"><div class="grow"><div class="t">' + esc(r.label) + (r.role ? ' <span class="m">· ' + esc(r.role) + '</span>' : '') + '</div>' + (r.does ? '<div class="m">' + esc(r.does) + '</div>' : '') + '</div><span class="tag acc">' + esc(ls.byId[r.agent].name) + '</span></div>'; }).join('') + '</div>' +
+      '<h2>Agents</h2>' + ls.agents.map(function (a) {
+        var st = ROUTE_OK[a.status], mine = pool.filter(function (c) { return c.agent === a.id; }).slice(0, 3);
+        return '<div class="card agent"><div class="row"><div class="av">' + esc(ini(a.name)) + '</div><div class="grow"><div class="t">' + esc(a.name) + '</div><div class="m">' + esc([a.serves, a.voice, a.handles || 'Calls and texts'].filter(Boolean).join(' · ')) + '</div></div><span class="tag ' + st[0] + '">' + st[1] + '</span></div>' +
+          (mine.length ? mine.map(callRow).join('') : '<div class="row"><div class="m">No calls yet</div></div>') + '</div>'; }).join('');
   };
   V.gate = function () { return '<div class="gate"><h1>Katya Calls</h1><p class="sub">Private app</p><div class="card pad">' + (ST.err ? '<p><b>' + esc(ST.err) + '</b></p>' : '') + '<p>Open this app once from your personal link (it ends in <b>#k=…</b>). After that it remembers this phone.</p><p class="m">No calls or keys are stored in this app; they come from your private server.</p></div></div>'; };
 
   /* ---------- shell ---------- */
   var ICO = {today: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>', calls: '<path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>', ask: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>', queue: '<path d="M4 12l5 5L20 6"/>', more: '<path d="M4 6h16M4 12h16M4 18h16"/>'};
   var NAV = [['today', '⌂', 'Today'], ['calls', '☏', 'Calls'], ['ask', '⌕', 'Ask'], ['queue', '✓', 'Approve'], ['more', '☰', 'More']];
-  var TITLE = { today: 'Today', calls: 'Calls', call: 'Call', ask: 'Ask', queue: 'Approve', new: 'New', routines: 'Routines', personas: 'Personas', persona: 'Persona', insights: 'Insights', settings: 'Settings', more: 'More', callset: 'Call settings', voices: 'Voice', people: 'People' };
-  var PARENT = { call: 'calls', persona: 'personas', routines: 'more', personas: 'more', insights: 'more', settings: 'more', new: 'today', callset: 'more', voices: 'callset', people: 'more' };
+  var TITLE = { today: 'Today', calls: 'Calls', call: 'Call', ask: 'Ask', queue: 'Approve', new: 'New', routines: 'Routines', personas: 'Personas', persona: 'Persona', insights: 'Insights', settings: 'Settings', more: 'More', callset: 'Call settings', voices: 'Voice', people: 'People', line: 'Phone line' };
+  var PARENT = { call: 'calls', persona: 'personas', routines: 'more', personas: 'more', insights: 'more', settings: 'more', new: 'today', callset: 'more', voices: 'callset', people: 'more', line: 'more' };
   function parse() { var h = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean); if (h[0] === 'life' || h[0] === 'ttg') { ST.P = h.shift(); localStorage.setItem('calls.p', ST.P); } ST.route = h.length ? h : ['today']; if (!V[ST.route[0]] || ST.route[0] === 'gate') ST.route = ['today']; }
   function draw(keep) {
     var r = KEY && !ST.fatal ? ST.route[0] : 'gate', ttg = TTG();
@@ -331,7 +362,7 @@
     $('#tabs').innerHTML = r === 'gate' ? '' : NAV.map(function (n) { return '<a href="#/' + ST.P + '/' + n[0] + '" class="' + (act === n[0] ? 'on' : '') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICO[n[0]] + '</svg>' + n[2] + (n[0] === 'queue' && nq ? ' (' + nq + ')' : '') + '</a>'; }).join('');
     var m = $('#m'); m.innerHTML = V[r](ST.route[1]);
     if (!keep) { m.style.animation = 'none'; void m.offsetHeight; m.style.animation = ''; scrollTo(0, 0); }
-    var t = $('#ntask'); if (t) { var u = function () { var w = t.value.trim().split(/\s+/).filter(String).length; $('#nwords').textContent = w ? w + ' words' + (w > 120 ? ' — shorter is faster (under 120)' : '') : ''; }; t.oninput = u; u(); }
+    var t = $('#ntask'); if (t) { var u = function () { var w = t.value.trim().split(/\s+/).filter(String).length; $('#nwords').textContent = w ? w + ' words' + (w > 120 ? '. Shorter is faster (under 120).' : '') : ''; }; t.oninput = u; u(); }
   }
   function saveDraft() { ['to', 'task', 'subj', 'body'].forEach(function (k) { var e = $('#n' + k); if (e) ST.draft[k] = e.value; }); }
   function load() {
@@ -370,7 +401,7 @@
     if (d.ch) { saveDraft(); ST.ch = d.ch; draw(1); }
     if (d.again) { ST.ch = 'Call'; ST.draft = { to: fmtNum(d.again) }; go('new'); }
     if (d.ob) { var b = document.querySelector('[data-body="' + d.id + '"]'); t.disabled = true;
-      api(d.ob, { id: d.id, body: b && b.value }).then(function (j) { ST.boot.outbox = j.outbox; toast(d.ob === 'outboxApprove' ? 'Approved — not sent automatically' : d.ob === 'outboxDiscard' ? 'Discarded' : 'Saved'); draw(1); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
+      api(d.ob, { id: d.id, body: b && b.value }).then(function (j) { ST.boot.outbox = j.outbox; toast(d.ob === 'outboxApprove' ? 'Approved. Not sent automatically' : d.ob === 'outboxDiscard' ? 'Discarded' : 'Saved'); draw(1); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
     if (d.act === 'toQueue') { saveDraft(); var dr = ST.draft; if (!dr.to || !dr.body) return toast('Add who it is for and a message');
       t.disabled = true; api('outboxAdd', { ch: ST.ch === 'Email' ? 'email' : 'sms', portal: ST.P, to: dr.to, subj: dr.subj, body: dr.body })
         .then(function (j) { ST.boot.outbox = j.outbox; ST.draft = {}; toast('Added to Approve. Not sent.'); go('queue'); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
