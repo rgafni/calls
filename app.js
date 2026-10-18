@@ -106,7 +106,7 @@
   function empty(t, s) { return '<div class="empty"><div class="t">' + esc(t) + '</div>' + (s ? '<div>' + esc(s) + '</div>' : '') + '</div>'; }
   function callRow(c) {
     return '<a class="row link" href="#/' + ST.P + '/call/' + encodeURIComponent(c.id) + '"><div class="av">' + esc(ini(c.person)) + '</div><div class="grow"><div class="t ell">' + esc(c.type || 'Call') + ' · ' + esc(c.person || '') + '</div>' +
-      '<div class="m ell">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + '</div></div>' + outTag(c.outcome) + '<span class="chev">›</span></a>';
+      '<div class="m ell">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + '</div></div>' + (c.safety ? '<span class="tag bad">Safety</span>' : '') + outTag(c.outcome) + '<span class="chev">›</span></a>';
   }
 
   /* ---------- views ---------- */
