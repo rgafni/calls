@@ -282,7 +282,7 @@
       '<div class="btns"><button class="btn ghost" data-act="pAdd">Add person</button>' + (pick ? '<button class="btn ghost" data-act="pPick">Import from phone</button>' : '<label class="btn ghost">Import .vcf<input type="file" id="vcf" accept=".vcf,text/vcard,text/x-vcard" hidden></label>') + '</div>' +
       (ps.length ? '<div class="card" style="margin-top:12px">' + ps.map(function (c, i) {
         return '<button class="row link plain" data-person="' + i + '"><div class="av">' + esc(ini(c.name)) + '</div><div class="grow"><div class="t">' + esc(c.name) + '</div><div class="m">' + (c.num ? esc(fmtNum(c.num)) : 'No number yet') + ' · ' + (c.portal === 'ttg' ? 'TTG' : 'Life') + '</div></div>' + (c.fav ? '<span class="tag">Favorite</span>' : '') + '<span class="chev">›</span></button>'; }).join('') + '</div>' : empty('No people yet')) +
-      '<p class="m">Calls from here open your phone’s dialer. Katya never auto-calls a protected contact.</p>';
+      '<p class="m">Calls from here open your phone’s dialer.</p>';
   };
   function personSheet(i) {
     var c = people()[i] || { name: '', num: '', email: '', fav: true, portal: ST.P }, n = String(c.num || '').replace(/[^\d+]/g, '');
