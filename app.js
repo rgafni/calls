@@ -282,7 +282,7 @@
       '<div class="btns"><button class="btn ghost" data-act="pAdd">Add person</button>' + (pick ? '<button class="btn ghost" data-act="pPick">Import from phone</button>' : '<label class="btn ghost">Import .vcf<input type="file" id="vcf" accept=".vcf,text/vcard,text/x-vcard" hidden></label>') + '</div>' +
       (ps.length ? '<div class="card" style="margin-top:12px">' + ps.map(function (c, i) {
         return '<button class="row link plain" data-person="' + i + '"><div class="av">' + esc(ini(c.name)) + '</div><div class="grow"><div class="t">' + esc(c.name) + '</div><div class="m">' + (c.num ? esc(fmtNum(c.num)) : 'No number yet') + ' · ' + (c.portal === 'ttg' ? 'TTG' : 'Life') + '</div></div>' + (c.fav ? '<span class="tag">Favorite</span>' : '') + '<span class="chev">›</span></button>'; }).join('') + '</div>' : empty('No people yet')) +
-      '<p class="m">Calls from here open your phone’s dialer. Katya never auto-calls Nina.</p>';
+      '<p class="m">Calls from here open your phone’s dialer. Katya never auto-calls a protected contact.</p>';
   };
   function personSheet(i) {
     var c = people()[i] || { name: '', num: '', email: '', fav: true, portal: ST.P }, n = String(c.num || '').replace(/[^\d+]/g, '');
@@ -362,7 +362,7 @@
     if (d.act === 'pAdd') { personSheet(-1); return; }
     if (d.pfav) { t.classList.toggle('on'); return; }
     if (d.psave) { var i = +d.psave, ps = people().slice(), c = { name: $('#pn').value.trim(), num: $('#pt').value.trim(), email: $('#pe').value.trim(), fav: $('#pf').classList.contains('on'), portal: (ps[i] || {}).portal || ST.P };
-      if (!c.name) return toast('Add a name'); if (/^nina\b/i.test(c.name)) c.nobot = true; if (i >= 0) ps[i] = c; else ps.push(c); closeSheet(); savePeople(ps); return; }
+      if (!c.name) return toast('Add a name'); if (i >= 0) ps[i] = c; else ps.push(c); closeSheet(); savePeople(ps); return; }
     if (d.pdel) { var ps2 = people().slice(); ps2.splice(+d.pdel, 1); closeSheet(); savePeople(ps2, 'Removed'); return; }
     if (d.act === 'pPick') { navigator.contacts.select(['name', 'tel', 'email'], { multiple: true }).then(function (l) { return mergePeople(l.map(function (x) { return { name: (x.name || [])[0], num: (x.tel || [])[0], email: (x.email || [])[0] }; })); }).catch(function (x) { toast(x.message); }); return; }
     if (d.ft) { ST.f.type = d.ft; draw(1); }
