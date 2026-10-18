@@ -252,7 +252,7 @@
       (vma === 'leave_message' ? '<textarea id="csvm" rows="3" maxlength="400" placeholder="Message to leave">' + esc(csVal(t, 'vm_message') || '') + '</textarea>' : '') + '</div>' +
       tog(t, 'vm_sensitive', 'Smarter voicemail detection', 'Slower, fewer mistakes') + '</div>' +
       '<div class="btns" style="margin-top:6px"><button class="btn ghost" data-act="csPreview">See what is sent</button></div>' +
-      '<p class="m">Used by app calls and Katya’s routine calls. Shabbat, AI disclosure and limits still apply.</p>' +
+      '<p class="m">Used by app calls and Katya’s routine calls. The Shabbat and Yom Tov block, the AI disclosure and the 20-call limit are enforced for calls started in this app. Routine calls follow their own instructions.</p>' +
       (ST.csDirty ? '<div class="savebar"><button class="btn ghost" data-act="csUndo">Undo</button><button class="btn" data-act="csSave">Save</button></div>' : '<p class="m">Saved · version ' + (ST.cs.settings.rev || 0) + '</p>');
     return h;
   };
