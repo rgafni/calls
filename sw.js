@@ -1,6 +1,6 @@
 /* App shell only. Never caches call data: API requests go to the private backend and are not intercepted.
    Network-first (bypassing the HTTP cache) for every shell request; cache is only an offline fallback. */
-var V = 'calls-v8-0', SHELL = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
+var V = 'calls-v8-1', SHELL = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(V).then(function (c) {
     return Promise.all(SHELL.map(function (p) { return fetch(new Request(p, { cache: 'no-store' })).then(function (r) { if (r.ok) return c.put(p, r); }); }));

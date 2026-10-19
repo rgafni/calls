@@ -190,7 +190,7 @@
     return '<h1>Personas</h1><p class="sub">How Katya sounds on each kind of call</p>' + ps.map(function (p, i) {
       var n = cs.filter(function (c) { return p.types.indexOf(c.type) >= 0; }), ans = n.filter(function (c) { return /^Answered/.test(c.outcome); }).length;
       return '<a class="card pad" style="display:block" href="#/' + ST.P + '/persona/' + i + '"><div style="display:flex;justify-content:space-between"><div class="t">' + esc(p.name) + '</div><span class="chev">›</span></div><div class="m">' + esc(p.use) + '</div>' +
-        '<div class="m" style="margin-top:6px">' + n.length + ' calls · ' + ans + ' answered · voice: ' + esc(p.voice) + '</div></a>'; }).join('');
+        '<div class="m" style="margin-top:6px">' + (p.kid ? '' : n.length + ' calls · ' + ans + ' answered · ') + 'voice: ' + esc(p.voice) + '</div></a>'; }).join('');
   };
   V.persona = function (i) {
     var p = personas()[+i]; if (!p) return empty('Persona not found');
@@ -198,11 +198,12 @@
     var long = p.words > 120, msg = ST.peMsg && ST.peMsg.key === p.key ? ST.peMsg : null, me = isRoni();
     return '<h1>' + esc(p.name) + '</h1><p class="sub">' + esc(p.use) + '</p>' +
       (msg ? '<div class="note ' + (msg.ok ? 'okbox' : 'warnbox') + '" role="status" style="margin-bottom:12px">' + esc(msg.t) + '</div>' : '') +
-      '<div class="card"><div class="kv"><span class="m">Voice</span><span>' + esc(p.voice) + '</span></div><div class="kv"><span class="m">Instructions</span><span>' + (p.words ? p.words + ' words' : 'Set per call') + '</span></div><div class="kv"><span class="m">Call types</span><span>' + esc(p.types.join(', ')) + '</span></div></div>' +
+      '<div class="card"><div class="kv"><span class="m">Voice</span><span>' + esc(p.voice) + '</span></div><div class="kv"><span class="m">Instructions</span><span>' + (p.words ? p.words + ' words' : 'Set per call') + '</span></div>' + (p.kid ? '' : '<div class="kv"><span class="m">Call types</span><span>' + esc(p.types.join(', ')) + '</span></div>') + '</div>' +
       (me ? '<div class="btns" style="margin-top:10px"><button class="btn" data-peedit="' + esc(i) + '">Edit</button></div>' : '') +
       (long ? '<div class="note warnbox">These instructions are ' + p.words + ' words. Long instructions made Katya slow to reply (12 to 19 s). Around 120 words gave 4 to 7 s.</div>' : '') +
       (p.prompt ? '<h2>Instructions</h2><div class="card pad"><pre class="prompt">' + esc(p.prompt) + '</pre></div>' : '') +
-      (me ? '<h2>Sample call</h2><div class="card"><div class="row"><div class="grow"><div class="t">Private: not recorded, leaves no history in the Calls app</div>' +
+      (me && p.kid ? '<p class="m">Saving changes only the stored persona. It does not place, schedule or turn on any call.</p>' : '') +
+      (me && !p.kid ? '<h2>Sample call</h2><div class="card"><div class="row"><div class="grow"><div class="t">Private: not recorded, leaves no history in the Calls app</div>' +
         '<div class="m">' + 'Bland still keeps its own transcript. Your assistants have a rule never to open private calls, but anyone with Bland access could.' + (ST.samplePriv ? '' : ' Off now: a normal call, kept like other calls.') + '</div></div>' +
         '<button class="sw' + (ST.samplePriv ? ' on' : '') + '" data-samplepriv="1" role="switch" aria-checked="' + (ST.samplePriv ? 'true' : 'false') + '" aria-label="Private sample call"></button></div></div>' +
         '<div class="btns" style="margin-top:10px"><button class="btn ghost" data-sample="' + esc(i) + '">Call me as a sample</button></div><p class="m">Calls your own phone only, in this persona\u2019s voice and instructions. One sample every 2 minutes.</p>' : '') +
@@ -212,15 +213,15 @@
     var e = ST.pe, er = e.errs || {};
     if (!ST.voices && !ST.vLoading) { ST.vLoading = true; api('voices2').then(function (j) { ST.voices = j.voices; }).catch(function (x) { ST.voices = []; e.msg = 'Could not load voices: ' + x.message; }).then(function () { ST.vLoading = false; peRead(); draw(1); }); }
     var f = function (lab, inner, err) { return '<div class="fld"><div class="flabel">' + lab + '</div>' + inner + (err ? '<div class="ferr" role="alert">' + esc(err) + '</div>' : '') + '</div>'; };
-    var vs = ST.voices || [], has = vs.some(function (v) { return v.id === e.voiceId; });
+    var vs = (p.voiceChoices || []).filter(function (c) { return !(ST.voices || []).some(function (v) { return v.id === c.id; }); }).concat(ST.voices || []), has = vs.some(function (v) { return v.id === e.voiceId; });
     return '<h1>Edit persona</h1><p class="sub">' + esc(p.name) + '</p>' + (e.msg ? '<div class="note warnbox" role="status" style="margin-bottom:12px">' + esc(e.msg) + '</div>' : '') +
       '<div class="card pad">' +
       f('Name', '<input id="pe_name" maxlength="60" value="' + esc(e.name) + '">', er.name) +
       f('Description', '<input id="pe_use" maxlength="200" value="' + esc(e.use) + '">', er.use) +
       f('Voice', ST.voices ? '<select id="pe_voice"><option value=""' + (has ? '' : ' selected') + '>Pick a voice</option>' + vs.map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === e.voiceId ? ' selected' : '') + '>' + esc(v.name) + '</option>'; }).join('') + '</select>' : '<div class="m"><span class="spin"></span>Loading voices</div>', er.voice) +
       f('Instructions', '<textarea id="pe_prompt" rows="10" maxlength="6000">' + esc(e.prompt) + '</textarea><div class="m">What Katya should do and say on these calls. Leave empty to write them per call.</div>', er.prompt) +
-      f('Call types', (p.typeChoices || []).map(function (t) { return '<label class="chk"><input type="checkbox" name="pe_type" value="' + esc(t.key) + '"' + (e.types.indexOf(t.key) >= 0 ? ' checked' : '') + '> ' + esc(t.label) + '</label>'; }).join(''), er.types) +
-      '</div><p class="m">Changes apply to the next call.</p>' +
+      ((p.typeChoices || []).length ? f('Call types', (p.typeChoices || []).map(function (t) { return '<label class="chk"><input type="checkbox" name="pe_type" value="' + esc(t.key) + '"' + (e.types.indexOf(t.key) >= 0 ? ' checked' : '') + '> ' + esc(t.label) + '</label>'; }).join(''), er.types) : '') +
+      '</div><p class="m">Changes apply to the next call.' + (p.kid ? ' Saving does not place or schedule a call.' : '') + '</p>' +
       '<div class="savebar"><button class="btn ghost" data-act="peCancel">Cancel</button><button class="btn" data-act="peSave"' + (e.saving ? ' disabled' : '') + '>' + (e.saving ? 'Saving' : 'Save') + '</button></div>';
   }
   function peRead() { var e = ST.pe; if (!e) return; var g = function (id) { var x = $('#' + id); return x ? x.value : null; };
@@ -229,7 +230,7 @@
     if (bx.length) e.types = Array.prototype.filter.call(bx, function (b) { return b.checked; }).map(function (b) { return b.value; }); }
   function peCheck(e) { var r = {};
     if (!e.name.trim()) r.name = 'Name is required'; if (!e.use.trim()) r.use = 'Description is required';
-    if (!e.voiceId) r.voice = 'Pick a voice'; if (!e.types.length) r.types = 'Pick at least one call type';
+    if (!e.voiceId) r.voice = 'Pick a voice'; if (!e.kid && !e.types.length) r.types = 'Pick at least one call type';
     if (e.prompt.length > 6000) r.prompt = 'Instructions are too long (6000 characters max)'; return r; }
   V.insights = function () {
     var cs = calls(); if (!cs.length) return empty('No calls yet');
@@ -422,7 +423,7 @@
       if (dg.length < 10) return toast('Enter a 10-digit number'); if (!dc.task || dc.task.length < 8) return toast('Say what the call is for');
       sheet('<div class="t" style="font-size:19px">Place this call now?</div><p class="m">Katya will call <b>' + esc(fmtNum(dg)) + '</b> from ' + esc(fmtNum((ST.boot || {}).line)) + '.</p><div class="note" style="margin-bottom:14px">' + esc(dc.task) + '</div>' +
         '<div class="btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="placeCall">Call now</button></div>'); }
-    if (d.peedit != null) { var pp = personas()[+d.peedit]; if (!pp) return; ST.peMsg = null; ST.pe = { key: pp.key, name: pp.name, use: pp.use, voiceId: pp.voiceId || '', prompt: pp.prompt || '', types: (pp.typeKeys || []).slice(), errs: {} }; draw(); return; }
+    if (d.peedit != null) { var pp = personas()[+d.peedit]; if (!pp) return; ST.peMsg = null; ST.pe = { key: pp.key, kid: !!pp.kid, name: pp.name, use: pp.use, voiceId: pp.voiceId || '', prompt: pp.prompt || '', types: (pp.typeKeys || []).slice(), errs: {} }; draw(); return; }
     if (d.act === 'peCancel') { ST.pe = null; draw(1); return; }
     if (d.act === 'peSave') { peRead(); var pe = ST.pe; pe.errs = peCheck(pe); pe.msg = '';
       if (Object.keys(pe.errs).length) { pe.msg = 'Not saved. Fix the fields marked below.'; draw(1); return; }
