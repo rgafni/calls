@@ -203,7 +203,7 @@
       (me ? '<div class="btns" style="margin-top:10px"><button class="btn" data-peedit="' + esc(i) + '">Edit</button></div>' : '') +
       (long ? '<div class="note warnbox">These instructions are ' + p.words + ' words. Long instructions made Katya slow to reply (12 to 19 s). Around 120 words gave 4 to 7 s.</div>' : '') +
       (p.prompt ? '<h2>Instructions</h2><div class="card pad"><pre class="prompt">' + esc(p.prompt) + '</pre></div>' : '') +
-      (me ? '<h2>Sample call</h2><div class="card"><div class="row"><div class="grow"><div class="t">Private: no recording or transcript kept</div>' +
+      (me ? '<h2>Sample call</h2><div class="card"><div class="row"><div class="grow"><div class="t">Private: no recording, no transcript kept by Calls or Katya</div>' +
         '<div class="m">' + (ST.samplePriv ? 'On. Not recorded. Calls and Katya keep only the time and length. Bland still makes its own transcript of the call.' : 'Off. A normal call: transcript and summary are kept like other calls, and Katya can read them.') + '</div></div>' +
         '<button class="sw' + (ST.samplePriv ? ' on' : '') + '" data-samplepriv="1" role="switch" aria-checked="' + (ST.samplePriv ? 'true' : 'false') + '" aria-label="Private sample call"></button></div></div>' +
         '<div class="btns" style="margin-top:10px"><button class="btn ghost" data-sample="' + esc(i) + '">Call me as a sample</button></div><p class="m">Calls your own phone only, in this persona\u2019s voice and instructions. One sample every 2 minutes.</p>' : '') +
