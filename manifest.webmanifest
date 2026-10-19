@@ -1,4 +1,4 @@
 {"name":"Katya Calls","short_name":"Calls","id":"./","start_url":"./","scope":"./","display":"standalone","orientation":"portrait",
  "background_color":"#f6f5f2","theme_color":"#f6f5f2","description":"Private app for Roni's Katya calls. Needs a personal link key.",
- "icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"},
- {"src":"icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"},{"src":"icon.svg","sizes":"any","type":"image/svg+xml"}]}
+ "icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},{"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+ {"src":"icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"},{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}

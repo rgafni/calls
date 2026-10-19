@@ -26,47 +26,29 @@
   addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); DEFER = e; showInst(); });
   addEventListener('appinstalled', function () { DEFER = null; STANDALONE = true; showInst(); toast('Installed'); });
   var UA = navigator.userAgent, ANDROID = /Android/i.test(UA);
-  /* In-app browsers (WebViews) never fire beforeinstallprompt; detect them so the button can hand off to real Chrome. */
-  var WV = ANDROID && (/; wv\)/.test(UA) || /Version\/\d+\.\d+ Chrome/.test(UA) || /FBAN|FBAV|Instagram|Line\/|GSA\//.test(UA));
-  var NOBIP = false; setTimeout(function () { if (!DEFER) NOBIP = true; }, 1500);
-  function showInst() { var b = document.querySelectorAll('.instban,.instb'), sub = ST.route && ST.route[0] !== 'today'; for (var i = 0; i < b.length; i++) b[i].hidden = STANDALONE || (sub && b[i].classList.contains('instb')); }
-  if (window.__qa) window.__qa.ci = function () { return chromeIntent(); };
-  function chromeIntent() {
-    var base = location.href.replace(/[#?].*$/, ''), u = new URL(base);
-    var frag = KEY ? '#k=' + encodeURIComponent(KEY) : '';
-    return 'intent://' + u.host + u.pathname + frag + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + encodeURIComponent(base + frag) + ';end';
-  }
+  /* One install entry point: the header button, shown only when Chrome handed us its prompt (beforeinstallprompt) and
+     the app is not already installed. No banner, no sheet. If no prompt was captured, Settings > This phone shows a
+     quiet "How to install" link with the manual steps. */
+  if (window.matchMedia) try { matchMedia('(display-mode: standalone)').addEventListener('change', function (e) { if (e.matches) { STANDALONE = true; DEFER = null; showInst(); } }); } catch (e) {}
+  function showInst() { var b = $('#instb'); if (b) b.hidden = STANDALONE || !DEFER; }
   /* iOS home-screen apps get their own storage, so point the installed app's start URL at the link key on this phone only. */
   if (KEY && !STANDALONE && IOS) { try {
     var base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, ''), l = document.querySelector('link[rel=manifest]');
     var mf = { name: 'Katya Calls', short_name: 'Calls', id: base, start_url: base + '#k=' + encodeURIComponent(KEY), scope: base, display: 'standalone', orientation: 'portrait', background_color: '#f6f5f2', theme_color: '#f6f5f2',
-      icons: [['icon-192.png', '192x192'], ['icon-512.png', '512x512']].map(function (i) { return { src: base + i[0], sizes: i[1], type: 'image/png' }; }).concat([{ src: base + 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }]) };
+      icons: [['icon-192.png', '192x192'], ['icon-512.png', '512x512']].map(function (i) { return { src: base + i[0], sizes: i[1], type: 'image/png', purpose: 'any' }; }).concat([{ src: base + 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }]) };
     if (l) l.href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(mf));
   } catch (e) {} }
   var SHARE = '<svg class="shr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 11v9h14v-9"/></svg>';
-  function chromeSheet() {
-    sheet('<div class="ios"><h3>Install Katya Calls</h3><p class="m">' + (WV ? 'Open this page in Chrome first, then:' : 'In Chrome:') + '</p><ol>' +
-      '<li><span class="n">1</span><span>Tap the <b>&#8942; menu</b> at the <b>top right</b> of Chrome.</span></li>' +
-      '<li><span class="n">2</span><span>Tap <b>Install app</b> (or <b>Add to Home screen</b>).</span></li></ol>' +
-      '<button class="btn w" data-act="cancel">Got it</button></div>');
-  }
   function install() {
-    if (DEFER) { DEFER.prompt(); DEFER.userChoice.then(function () { DEFER = null; showInst(); }); return; }
-    if (ANDROID && (WV || NOBIP) && !window.__noIntent) {
-      var gone = false, vis = function () { if (document.hidden) gone = true; };
-      document.addEventListener('visibilitychange', vis);
-      location.href = chromeIntent();
-      setTimeout(function () { document.removeEventListener('visibilitychange', vis); if (!gone) chromeSheet(); }, 1200);
-      return;
-    }
-    if (!IOS) { chromeSheet(); return; }
-    var crios = /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
-    sheet('<div class="ios"><h3>Install Katya Calls</h3><p class="m">Adds the app to your Home Screen. Takes 10 seconds.</p><ol>' +
-      '<li><span class="n">1</span><span>Tap the <b>Share</b> icon ' + SHARE + ' ' + (crios ? 'at the <b>top right</b> of Chrome' : 'at the <b>bottom</b> of Safari') + '.</span></li>' +
-      '<li><span class="n">2</span><span>Scroll down and tap <b>Add to Home Screen</b>.</span></li>' +
-      '<li><span class="n">3</span><span>Tap <b>Add</b> in the top right corner.</span></li></ol>' +
-      '<div class="note">' + (crios ? 'In Safari, the Share icon is at the bottom instead.' : 'Using Chrome on iPhone? The Share icon is at the <b>top right</b>, next to the address bar.') + ' Then open <b>Calls</b> from your Home Screen.</div>' +
-      '<button class="btn w" data-act="cancel">Got it</button></div>');
+    if (!DEFER) { showInst(); return; }
+    var ev = DEFER; DEFER = null; showInst();
+    try { ev.prompt(); (ev.userChoice || Promise.resolve({})).then(function (c) { if (!(c && c.outcome === 'accepted')) { DEFER = null; } showInst(); }); } catch (x) { showInst(); }
+  }
+  function howToInstall() { // quiet fallback, inline in Settings (no sheet); only when no prompt was captured
+    if (STANDALONE || DEFER) return '';
+    var st = IOS ? ['Tap Share ' + SHARE + ' (Safari: bottom bar; Chrome: top right).', 'Tap <b>Add to Home Screen</b>, then <b>Add</b>.']
+      : ['Open the Chrome menu <b>&#8942;</b> at the top right.', 'Tap <b>Install app</b> or <b>Add to Home screen</b>.'];
+    return '<details class="howi"><summary>How to install</summary><ol>' + st.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ol></details>';
   }
   var go = function (r) { location.hash = '#/' + ST.P + '/' + r; };
 
@@ -105,6 +87,7 @@
   function loading(t) { return '<div class="empty"><div class="t"><span class="spin"></span>' + esc(t || 'Loading your calls…') + '</div></div>'; }
   function empty(t, s) { return '<div class="empty"><div class="t">' + esc(t) + '</div>' + (s ? '<div>' + esc(s) + '</div>' : '') + '</div>'; }
   function callRow(c) {
+    if (c.priv) return '<div class="row"><div class="av">Me</div><div class="grow"><div class="t ell">Private sample call</div><div class="m ell">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + '</div></div><span class="tag">Private</span></div>';
     return '<a class="row link" href="#/' + ST.P + '/call/' + encodeURIComponent(c.id) + '"><div class="av">' + esc(ini(c.person)) + '</div><div class="grow"><div class="t ell">' + esc(c.type || 'Call') + ' · ' + esc(c.person || '') + '</div>' +
       '<div class="m ell">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + '</div></div>' + (c.safety ? '<span class="tag bad">Safety</span>' : '') + outTag(c.outcome) + '<span class="chev">›</span></a>';
   }
@@ -117,7 +100,7 @@
     var wk = Date.now() - 7 * 864e5, miss = cs.filter(function (c) { return new Date(c.at) > wk && /Voicemail|No answer|Failed/.test(c.outcome); });
     var r = ((ST.boot && ST.boot.routines) || []), nx = TTG() ? null : r[0];
     var hr = new Date().getHours();
-    return (STANDALONE ? '' : '<button class="instban" data-act="install"><span class="ib-t">Install app</span><span class="ib-m">Put Calls on your Home Screen</span></button>') + '<h1>' + (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + '</h1><p class="sub">' + (TTG() ? 'TTG business calls' : 'Your life calls') + '</p>' + favRow() +
+    return '<h1>' + (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + '</h1><p class="sub">' + (TTG() ? 'TTG business calls' : 'Your life calls') + '</p>' + favRow() +
       (nx ? '<div class="card hero"><div class="m">Scheduled routine</div><div class="big">' + esc(nx.name) + '</div><div class="m">' + esc(nx.when) + '</div><div class="actions"><a class="btn" href="#/' + ST.P + '/routines">See routines</a></div></div>'
         : '<div class="card hero"><div class="m">TTG</div><div class="big">No scheduled business calls</div><div class="m">Business calls only go out when you start one and confirm.</div><div class="actions"><a class="btn w2" href="#/ttg/new">Start a call</a></div></div>') +
       '<div class="grid2" style="margin-top:10px"><a class="tile" href="#/' + ST.P + '/calls"><b>' + td.length + '</b><span class="m">Calls today</span></a><a class="tile" href="#/' + ST.P + '/queue"><b>' + q.length + '</b><span class="m">Waiting for approval</span></a></div>' +
@@ -212,12 +195,43 @@
   };
   V.persona = function (i) {
     var p = personas()[+i]; if (!p) return empty('Persona not found');
-    var long = p.words > 120;
-    return '<h1>' + esc(p.name) + '</h1><p class="sub">' + esc(p.use) + '</p><div class="card"><div class="kv"><span class="m">Voice</span><span>' + esc(p.voice) + '</span></div><div class="kv"><span class="m">Instructions</span><span>' + (p.words ? p.words + ' words' : 'Set per call') + '</span></div><div class="kv"><span class="m">Call types</span><span>' + esc(p.types.join(', ')) + '</span></div></div>' +
-      (long ? '<div class="note warnbox">These instructions are ' + p.words + ' words. Long instructions made Katya slow to reply (12–19 s). Around 120 words gave 4–7 s.</div>' : '') +
-      (p.prompt ? '<h2>Instructions (start)</h2><div class="card pad"><pre class="prompt">' + esc(p.prompt) + (p.prompt.length >= 900 ? '…' : '') + '</pre></div>' : '') +
-      '<p class="m">Read-only here. Ask your assistant in chat to change a persona.</p>';
+    if (ST.pe && ST.pe.key === p.key) return personaForm(p, i);
+    var long = p.words > 120, msg = ST.peMsg && ST.peMsg.key === p.key ? ST.peMsg : null, me = isRoni();
+    return '<h1>' + esc(p.name) + '</h1><p class="sub">' + esc(p.use) + '</p>' +
+      (msg ? '<div class="note ' + (msg.ok ? 'okbox' : 'warnbox') + '" role="status" style="margin-bottom:12px">' + esc(msg.t) + '</div>' : '') +
+      '<div class="card"><div class="kv"><span class="m">Voice</span><span>' + esc(p.voice) + '</span></div><div class="kv"><span class="m">Instructions</span><span>' + (p.words ? p.words + ' words' : 'Set per call') + '</span></div><div class="kv"><span class="m">Call types</span><span>' + esc(p.types.join(', ')) + '</span></div></div>' +
+      (me ? '<div class="btns" style="margin-top:10px"><button class="btn" data-peedit="' + esc(i) + '">Edit</button></div>' : '') +
+      (long ? '<div class="note warnbox">These instructions are ' + p.words + ' words. Long instructions made Katya slow to reply (12 to 19 s). Around 120 words gave 4 to 7 s.</div>' : '') +
+      (p.prompt ? '<h2>Instructions</h2><div class="card pad"><pre class="prompt">' + esc(p.prompt) + '</pre></div>' : '') +
+      (me ? '<h2>Sample call</h2><div class="card"><div class="row"><div class="grow"><div class="t">Private: no recording or transcript kept</div>' +
+        '<div class="m">' + (ST.samplePriv ? 'On. Not recorded. Calls and Katya keep only the time and length. Bland still makes its own transcript of the call.' : 'Off. A normal call: transcript and summary are kept like other calls, and Katya can read them.') + '</div></div>' +
+        '<button class="sw' + (ST.samplePriv ? ' on' : '') + '" data-samplepriv="1" role="switch" aria-checked="' + (ST.samplePriv ? 'true' : 'false') + '" aria-label="Private sample call"></button></div></div>' +
+        '<div class="btns" style="margin-top:10px"><button class="btn ghost" data-sample="' + esc(i) + '">Call me as a sample</button></div><p class="m">Calls your own phone only, in this persona\u2019s voice and instructions. One sample every 2 minutes.</p>' : '') +
+      (me ? '<p class="m">Changes apply to the next call.</p>' : '');
   };
+  function personaForm(p, i) {
+    var e = ST.pe, er = e.errs || {};
+    if (!ST.voices && !ST.vLoading) { ST.vLoading = true; api('voices2').then(function (j) { ST.voices = j.voices; }).catch(function (x) { ST.voices = []; e.msg = 'Could not load voices: ' + x.message; }).then(function () { ST.vLoading = false; peRead(); draw(1); }); }
+    var f = function (lab, inner, err) { return '<div class="fld"><div class="flabel">' + lab + '</div>' + inner + (err ? '<div class="ferr" role="alert">' + esc(err) + '</div>' : '') + '</div>'; };
+    var vs = ST.voices || [], has = vs.some(function (v) { return v.id === e.voiceId; });
+    return '<h1>Edit persona</h1><p class="sub">' + esc(p.name) + '</p>' + (e.msg ? '<div class="note warnbox" role="status" style="margin-bottom:12px">' + esc(e.msg) + '</div>' : '') +
+      '<div class="card pad">' +
+      f('Name', '<input id="pe_name" maxlength="60" value="' + esc(e.name) + '">', er.name) +
+      f('Description', '<input id="pe_use" maxlength="200" value="' + esc(e.use) + '">', er.use) +
+      f('Voice', ST.voices ? '<select id="pe_voice"><option value=""' + (has ? '' : ' selected') + '>Pick a voice</option>' + vs.map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === e.voiceId ? ' selected' : '') + '>' + esc(v.name) + '</option>'; }).join('') + '</select>' : '<div class="m"><span class="spin"></span>Loading voices</div>', er.voice) +
+      f('Instructions', '<textarea id="pe_prompt" rows="10" maxlength="6000">' + esc(e.prompt) + '</textarea><div class="m">What Katya should do and say on these calls. Leave empty to write them per call.</div>', er.prompt) +
+      f('Call types', (p.typeChoices || []).map(function (t) { return '<label class="chk"><input type="checkbox" name="pe_type" value="' + esc(t.key) + '"' + (e.types.indexOf(t.key) >= 0 ? ' checked' : '') + '> ' + esc(t.label) + '</label>'; }).join(''), er.types) +
+      '</div><p class="m">Changes apply to the next call.</p>' +
+      '<div class="savebar"><button class="btn ghost" data-act="peCancel">Cancel</button><button class="btn" data-act="peSave"' + (e.saving ? ' disabled' : '') + '>' + (e.saving ? 'Saving' : 'Save') + '</button></div>';
+  }
+  function peRead() { var e = ST.pe; if (!e) return; var g = function (id) { var x = $('#' + id); return x ? x.value : null; };
+    var n = g('pe_name'), u = g('pe_use'), v = g('pe_voice'), pr = g('pe_prompt'), bx = document.querySelectorAll('input[name=pe_type]');
+    if (n != null) e.name = n; if (u != null) e.use = u; if (v != null) e.voiceId = v; if (pr != null) e.prompt = pr;
+    if (bx.length) e.types = Array.prototype.filter.call(bx, function (b) { return b.checked; }).map(function (b) { return b.value; }); }
+  function peCheck(e) { var r = {};
+    if (!e.name.trim()) r.name = 'Name is required'; if (!e.use.trim()) r.use = 'Description is required';
+    if (!e.voiceId) r.voice = 'Pick a voice'; if (!e.types.length) r.types = 'Pick at least one call type';
+    if (e.prompt.length > 6000) r.prompt = 'Instructions are too long (6000 characters max)'; return r; }
   V.insights = function () {
     var cs = calls(); if (!cs.length) return empty('No calls yet');
     var a = cs.filter(function (c) { return /^Answered/.test(c.outcome); }).length, mins = cs.reduce(function (s, c) { return s + (+c.min || 0); }, 0), L = cs.filter(function (c) { return c.lat != null; });
@@ -230,7 +244,7 @@
     return '<h1>Settings</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p><h2>Calling line</h2><div class="card">' + r('Katya’s number', esc(fmtNum(b.line || ''))) + (TTG() ? '' : '<a class="row link" href="#/life/line"><div class="grow"><div class="t">Who answers</div><div class="m">' + (lineSetup() ? 'Agents by caller' : 'Katya, every call and text') + '</div></div><span class="chev">›</span></a>') + r('Data source', b.hasKey ? 'Live from Bland' : 'Saved copy (Bland not connected)', b.hasKey ? 'Live' : 'Saved') + '</div>' +
       '<h2>Safety</h2><div class="card">' + r('Texts & emails need approval', 'No automatic sending exists', 'Always') + r('Calls need a confirm tap', '', 'Always') + r('Business calls say they are AI', 'Added by the server', 'Always') + r('Daily call limit', '20 calls a day', 'On') + r('Shabbat & Yom Tov', 'Calls blocked', 'On') + '</div>' +
       '<h2>Privacy</h2><div class="card">' + r('Student names on TTG', 'Shown as initials', 'On') + r('Life and TTG kept apart', 'Never mixed in lists or search', 'On') + r('Keys', 'Bland key stays on the private server, never in this app') + '</div>' +
-      '<h2>This phone</h2><div class="card">' + (STANDALONE ? r('Installed ✓', 'Running as the Home Screen app') : r('Not installed', 'Tap Install app at the top')) + '<button class="row link" style="width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left" data-act="forget"><div class="grow"><div class="t" style="color:#a32020">Forget this device</div><div class="m">Removes your link key from this phone</div></div></button></div>';
+      '<h2>This phone</h2><div class="card">' + (STANDALONE ? r('Installed ✓', 'Running as the Home Screen app') : DEFER ? r('Not installed', 'Tap Install app at the top') : r('Not installed', howToInstall())) + '<button class="row link" style="width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left" data-act="forget"><div class="grow"><div class="t" style="color:#a32020">Forget this device</div><div class="m">Removes your link key from this phone</div></div></button></div>';
   };
   /* ---------- v6: Call settings, voices, people ---------- */
   var CST = { global: 'All calls', wake: 'Wake-up', pre_calendar: 'Calendar brief', personal: 'Personal', business: 'Business' };
@@ -409,6 +423,21 @@
       if (dg.length < 10) return toast('Enter a 10-digit number'); if (!dc.task || dc.task.length < 8) return toast('Say what the call is for');
       sheet('<div class="t" style="font-size:19px">Place this call now?</div><p class="m">Katya will call <b>' + esc(fmtNum(dg)) + '</b> from ' + esc(fmtNum((ST.boot || {}).line)) + '.</p><div class="note" style="margin-bottom:14px">' + esc(dc.task) + '</div>' +
         '<div class="btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="placeCall">Call now</button></div>'); }
+    if (d.peedit != null) { var pp = personas()[+d.peedit]; if (!pp) return; ST.peMsg = null; ST.pe = { key: pp.key, name: pp.name, use: pp.use, voiceId: pp.voiceId || '', prompt: pp.prompt || '', types: (pp.typeKeys || []).slice(), errs: {} }; draw(); return; }
+    if (d.act === 'peCancel') { ST.pe = null; draw(1); return; }
+    if (d.act === 'peSave') { peRead(); var pe = ST.pe; pe.errs = peCheck(pe); pe.msg = '';
+      if (Object.keys(pe.errs).length) { pe.msg = 'Not saved. Fix the fields marked below.'; draw(1); return; }
+      pe.saving = true; draw(1);
+      api('savePersona', { key: pe.key, persona: { name: pe.name, use: pe.use, voiceId: pe.voiceId, prompt: pe.prompt, types: pe.types } })
+        .then(function (j) { ST.boot.personaInfo = j.personas; ST.peMsg = { key: pe.key, ok: true, t: 'Saved. The next call uses these changes.' }; ST.pe = null; draw(); })
+        .catch(function (x) { pe.saving = false; pe.msg = 'Not saved: ' + x.message; draw(1); }); return; }
+    if (d.samplepriv) { ST.samplePriv = !ST.samplePriv; draw(1); return; }
+    if (d.sample != null) { var sp = personas()[+d.sample]; if (!sp) return; ST.sampleKey = sp.key;
+      sheet('<div class="t" style="font-size:19px">Call you now as a sample?</div><p class="m">Katya calls your own phone as <b>' + esc(sp.name) + '</b>.</p><div class="note" style="margin-bottom:14px">' + (ST.samplePriv ? 'Private: not recorded. Calls and Katya keep only the time and length. Bland still keeps its own transcript.' : 'Normal call: the transcript is kept like other calls.') + '</div>' +
+        '<div class="btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="placeSample">Call me</button></div>'); return; }
+    if (d.act === 'placeSample') { t.disabled = true; var sk = ST.sampleKey;
+      api('samplePersona', { key: sk, private: !!ST.samplePriv }).then(function () { closeSheet(); ST.peMsg = { key: sk, ok: true, t: 'Calling your phone now.' }; draw(1); })
+        .catch(function (x) { closeSheet(); ST.peMsg = { key: sk, ok: false, t: 'Sample call failed: ' + x.message }; draw(1); }); return; }
     if (d.act === 'cancel') closeSheet();
     if (d.act === 'install') install();
     if (d.act === 'placeCall') { t.disabled = true; api('start', { to: ST.draft.to, task: ST.draft.task, portal: ST.P }).then(function (j) { closeSheet(); ST.draft = {}; toast('Calling… it will show in Calls'); go('calls'); setTimeout(load, 8000); }).catch(function (x) { closeSheet(); toast(x.message); }); }
@@ -423,7 +452,7 @@
   function doAsk() { ST.asking = true; draw(1); api('ask', { q: ST.askq, portal: ST.P }).then(function (j) { ST.ask = j; }).catch(function (x) { ST.ask = { err: x.message }; }).then(function () { ST.asking = false; draw(1); }); }
   document.addEventListener('submit', function (e) { if (e.target.id === 'askf') { e.preventDefault(); ST.askq = $('#cq').value.trim(); if (ST.askq) doAsk(); } });
   $('#sheet').addEventListener('click', function (e) { if (e.target.id === 'sheet') closeSheet(); });
-  addEventListener('hashchange', function () { parse(); draw(); });
+  addEventListener('hashchange', function () { parse(); if (ST.route[0] !== 'persona') { ST.pe = null; ST.peMsg = null; } draw(); });
   parse(); draw(); load();
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     var swc = navigator.serviceWorker, hadCtl = !!swc.controller, reloaded = false;
