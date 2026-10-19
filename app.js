@@ -87,7 +87,6 @@
   function loading(t) { return '<div class="empty"><div class="t"><span class="spin"></span>' + esc(t || 'Loading your calls…') + '</div></div>'; }
   function empty(t, s) { return '<div class="empty"><div class="t">' + esc(t) + '</div>' + (s ? '<div>' + esc(s) + '</div>' : '') + '</div>'; }
   function callRow(c) {
-    if (c.priv) return '<div class="row"><div class="av">Me</div><div class="grow"><div class="t ell">Private sample call</div><div class="m ell">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + '</div></div><span class="tag">Private</span></div>';
     return '<a class="row link" href="#/' + ST.P + '/call/' + encodeURIComponent(c.id) + '"><div class="av">' + esc(ini(c.person)) + '</div><div class="grow"><div class="t ell">' + esc(c.type || 'Call') + ' · ' + esc(c.person || '') + '</div>' +
       '<div class="m ell">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + '</div></div>' + (c.safety ? '<span class="tag bad">Safety</span>' : '') + outTag(c.outcome) + '<span class="chev">›</span></a>';
   }
@@ -203,7 +202,7 @@
       (me ? '<div class="btns" style="margin-top:10px"><button class="btn" data-peedit="' + esc(i) + '">Edit</button></div>' : '') +
       (long ? '<div class="note warnbox">These instructions are ' + p.words + ' words. Long instructions made Katya slow to reply (12 to 19 s). Around 120 words gave 4 to 7 s.</div>' : '') +
       (p.prompt ? '<h2>Instructions</h2><div class="card pad"><pre class="prompt">' + esc(p.prompt) + '</pre></div>' : '') +
-      (me ? '<h2>Sample call</h2><div class="card"><div class="row"><div class="grow"><div class="t">Private: not recorded, the Calls app shows only time and length</div>' +
+      (me ? '<h2>Sample call</h2><div class="card"><div class="row"><div class="grow"><div class="t">Private: not recorded, leaves no history in the Calls app</div>' +
         '<div class="m">' + 'Bland still keeps its own transcript. Your assistants have a rule never to open private calls, but anyone with Bland access could.' + (ST.samplePriv ? '' : ' Off now: a normal call, kept like other calls.') + '</div></div>' +
         '<button class="sw' + (ST.samplePriv ? ' on' : '') + '" data-samplepriv="1" role="switch" aria-checked="' + (ST.samplePriv ? 'true' : 'false') + '" aria-label="Private sample call"></button></div></div>' +
         '<div class="btns" style="margin-top:10px"><button class="btn ghost" data-sample="' + esc(i) + '">Call me as a sample</button></div><p class="m">Calls your own phone only, in this persona\u2019s voice and instructions. One sample every 2 minutes.</p>' : '') +
@@ -433,10 +432,10 @@
         .catch(function (x) { pe.saving = false; pe.msg = 'Not saved: ' + x.message; draw(1); }); return; }
     if (d.samplepriv) { ST.samplePriv = !ST.samplePriv; draw(1); return; }
     if (d.sample != null) { var sp = personas()[+d.sample]; if (!sp) return; ST.sampleKey = sp.key;
-      sheet('<div class="t" style="font-size:19px">Call you now as a sample?</div><p class="m">Katya calls your own phone as <b>' + esc(sp.name) + '</b>.</p><div class="note" style="margin-bottom:14px">' + (ST.samplePriv ? 'Private: not recorded, the Calls app shows only time and length. Bland still keeps its own transcript. Your assistants have a rule never to open private calls, but anyone with Bland access could.' : 'Normal call: kept like other calls, with its transcript.') + '</div>' +
+      sheet('<div class="t" style="font-size:19px">Call you now as a sample?</div><p class="m">Katya calls your own phone as <b>' + esc(sp.name) + '</b>.</p><div class="note" style="margin-bottom:14px">' + (ST.samplePriv ? 'Private: not recorded, leaves no history in the Calls app. Bland still keeps its own transcript. Your assistants have a rule never to open private calls, but anyone with Bland access could.' : 'Normal call: kept like other calls, with its transcript.') + '</div>' +
         '<div class="btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="placeSample">Call me</button></div>'); return; }
     if (d.act === 'placeSample') { t.disabled = true; var sk = ST.sampleKey;
-      api('samplePersona', { key: sk, private: !!ST.samplePriv }).then(function () { closeSheet(); ST.peMsg = { key: sk, ok: true, t: 'Calling your phone now.' }; draw(1); })
+      api('samplePersona', { key: sk, private: !!ST.samplePriv }).then(function () { closeSheet(); ST.peMsg = { key: sk, ok: true, t: 'Calling you now.' }; draw(1); })
         .catch(function (x) { closeSheet(); ST.peMsg = { key: sk, ok: false, t: 'Sample call failed: ' + x.message }; draw(1); }); return; }
     if (d.act === 'cancel') closeSheet();
     if (d.act === 'install') install();
