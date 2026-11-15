@@ -148,7 +148,7 @@
     var cs = calls(), q = outbox(), r = TTG() ? [] : ((ST.boot && ST.boot.routines) || []);
     var hero = TTG()
       ? '<div class="card hero"><div class="big">Call someone for TTG</div><div class="hm">Katya calls, says she is an AI assistant, and the call shows up here with a summary.</div><div class="actions"><a class="btn w2" href="#/ttg/new">Start a call</a></div></div>'
-      : '<div class="card hero"><div class="big">Katya, call me</div><div class="hm">She calls your phone now. Pick what it is about.</div><div class="actions"><button class="btn w2" data-act="callMeOpen">Call me now</button><button class="btn" data-cm="goodnight">Goodnight call</button><button class="btn ghost" data-cmlater="1">Set a time</button></div></div>';
+      : '<div class="card hero"><div class="big">Katya, call me</div><div class="hm">She calls your phone, now or at a time you set. Pick what it is about.</div><div class="actions"><button class="btn w2" data-act="callMeOpen">Call me now</button><button class="btn" data-cm="goodnight">Goodnight call</button><button class="btn ghost" data-cmlater="1">Set a time</button></div></div>';
     var pend = ST.pending && Date.now() - ST.pending < 3 * 60e3 ? '<div class="note okbox" role="status" style="margin-top:10px">Katya is calling you now. The call shows up below when it ends.</div>' : '';
     var nq = q.length ? '<a class="card needs" href="#/' + ST.P + '/queue"><div class="grow"><div class="t">' + q.length + ' ' + (q.length === 1 ? 'draft' : 'drafts') + ' waiting for your OK</div><div class="m ell">' + esc(q[0].body) + '</div></div><span class="tag warn">Review</span></a>' : '';
     var sr = TTG() ? '' : schedRows();
@@ -218,6 +218,7 @@
       '<div class="kv"><span>From</span><b>' + esc(from) + '</b>' + (em ? '<button class="lnk" data-obfrom="' + esc(x.id) + '" data-v="' + esc(other) + '">Change</button>' : '') + '</div>' +
       (x.subj ? '<div class="kv"><span>Subject</span><b>' + esc(x.subj) + '</b></div>' : '') +
       '<div class="flabel">Message</div><textarea rows="3" data-body="' + esc(x.id) + '">' + esc(x.body) + '</textarea>' +
+      (em && !(c10().scheduler || {}).running ? '<div class="note warnbox" role="status" style="margin-top:8px">Email needs one more Google permission first. Until setUpScheduler is run and you tap Allow, Approve can\u2019t send it.</div>' : '') +
       (x.destErr ? '<div class="note warnbox" role="alert" style="margin-top:8px">Can\u2019t send: ' + esc(x.destErr) + '</div>' : failed && res.msg ? '<div class="note warnbox" role="status" style="margin-top:8px">Not sent ' + esc(when(res.at)) + ': ' + esc(res.msg) + '</div>' : '') +
       '<div class="btns" style="margin-top:10px"><button class="btn red" data-ob="outboxDiscard" data-id="' + esc(x.id) + '">Discard</button><button class="btn ghost" data-ob="outboxEdit" data-id="' + esc(x.id) + '">Save edit</button>' +
       '<button class="btn" data-ob="outboxApprove" data-id="' + esc(x.id) + '"' + (x.destErr ? ' disabled' : '') + '>Approve</button></div></div>';
