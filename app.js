@@ -87,71 +87,115 @@
   function loading(t) { return '<div class="empty"><div class="t"><span class="spin"></span>' + esc(t || 'Loading your calls…') + '</div></div>'; }
   function empty(t, s) { return '<div class="empty"><div class="t">' + esc(t) + '</div>' + (s ? '<div>' + esc(s) + '</div>' : '') + '</div>'; }
   function callRow(c) {
-    return '<a class="row link" href="#/' + ST.P + '/call/' + encodeURIComponent(c.id) + '"><div class="av">' + esc(ini(c.person)) + '</div><div class="grow"><div class="t ell">' + esc(c.type || 'Call') + ' · ' + esc(c.person || '') + '</div>' +
-      '<div class="m ell">' + esc(when(c.at)) + ' · ' + esc(dur(c.min)) + '</div></div>' + (c.safety ? '<span class="tag bad">Safety</span>' : '') + outTag(c.outcome) + '<span class="chev">›</span></a>';
+    var ok = /^Answered/.test(c.outcome || ''), sum = String(c.summary || '').trim();
+    return '<a class="row link crow" href="#/' + ST.P + '/call/' + encodeURIComponent(c.id) + '"><div class="av">' + esc(ini(c.person)) + '</div><div class="grow"><div class="t ell">' + esc(callTitle(c)) + '</div>' +
+      (sum ? '<div class="sum">' + esc(sum) + '</div>' : '') +
+      '<div class="m ell">' + esc(when(c.at)) + (c.min ? ' · ' + esc(dur(c.min)) : '') + '</div></div>' + (c.safety ? '<span class="tag bad">Safety</span>' : '') + (ok ? '' : outTag(c.outcome)) + '<span class="chev">›</span></a>';
+  }
+  function callTitle(c) { return c.person === 'You' ? (c.type || 'Call') + ' to you' : (c.person || 'Call') + (c.type ? ' · ' + c.type : ''); }
+  /* ---------- call me (Katya calls Roni's own phone) ----------
+     The number comes from the private People list ("Me"), never from this public file. The sheet is the confirm step:
+     nothing is placed until "Call me now" is tapped. The server still enforces Shabbat/Yom Tov and the daily limit. */
+  var PURPOSE = [['checkin', 'Quick check-in', 'Purpose: a quick check-in. Ask how he is doing and what he needs.'],
+    ['goodnight', 'Goodnight', 'Purpose: a goodnight call. Be sweet and supportive. Nothing about business or work.'],
+    ['plan', 'Plan tomorrow', 'Purpose: help him plan tomorrow. Ask what is on tomorrow, help him put it in order, and read the short plan back at the end.'],
+    ['organize', 'Make a to-do list', 'Purpose: help him organize his stuff and make a to-do list. Ask what is on his mind, repeat each item back, and read the final list back at the end.']];
+  function meContact() { return people().filter(function (c) { return /^me\b/i.test(c.name || '') && String(c.num || '').replace(/\D/g, '').length >= 10; })[0] || null; }
+  function callMeTask(k, note) {
+    var p = PURPOSE.filter(function (x) { return x[0] === k; })[0] || PURPOSE[0];
+    return 'You are Katya, Roni\u2019s personal assistant. Roni just asked you to call him from the Calls app, so he is expecting you. ' +
+      'Open with one short warm line, like "Hi Roni, it\u2019s Katya." Keep your turns short and let him lead. ' + p[2] +
+      (note ? ' What he wrote: ' + note + '.' : '') +
+      ' If he asks you to do something, repeat it back in his own words. Stay on the line until he is done and never hang up on him early. When he says bye, say goodbye in one line and end the call.';
+  }
+  function callMeSheet(k, err) {
+    var me = meContact(); ST.cm = ST.cm || { k: 'checkin', note: '' }; if (k) ST.cm.k = k;
+    if (!me) return sheet('<h3 class="sh">Your cell number</h3><p class="m">Katya needs it once to call you. It is saved in your private People list as "Me", not in the app.</p>' +
+      '<input id="menum" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-5555">' + (err ? '<div class="ferr" role="alert">' + esc(err) + '</div>' : '') +
+      '<div class="btns" style="margin-top:14px"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="saveMe">Save and continue</button></div>');
+    var d = String(me.num).replace(/\D/g, '');
+    sheet('<h3 class="sh">Katya, call me</h3><p class="m">She calls your cell ending ' + esc(d.slice(-4)) + ' right away.</p>' +
+      '<div class="flabel">What is it about?</div><div class="chips wrap">' + PURPOSE.map(function (x) { return '<button class="chip' + (ST.cm.k === x[0] ? ' on' : '') + '" data-cmk="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' +
+      '<div class="flabel">Anything to add? (optional)</div><textarea id="cmnote" rows="2" maxlength="400" placeholder="e.g. I need to call the school before 9">' + esc(ST.cm.note || '') + '</textarea>' +
+      (err ? '<div class="note warnbox" role="alert" style="margin-top:10px">' + esc(err) + '</div>' : '') +
+      '<div class="btns" style="margin-top:14px"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="callMe">Call me now</button></div>');
+  }
+  /* next time for a routine whose text reads like "Weekdays 7:45 AM"; anything else shows its own text */
+  function nextRoutine(w) {
+    var m = /^Weekdays\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(w || ''); if (!m) return '';
+    var h = (+m[1] % 12) + (/pm/i.test(m[3]) ? 12 : 0), d = new Date(); d.setSeconds(0, 0); d.setHours(h, +m[2]);
+    if (d <= new Date()) d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    return day(d.toISOString()) + ', ' + tm(d.toISOString());
+  }
+  function personActions(i) {
+    var c = people()[i]; if (!c) return;
+    var n = String(c.num || '').replace(/[^\d+]/g, ''), me = /^me\b/i.test(c.name || '');
+    sheet('<h3 class="sh">' + esc(c.name) + '</h3><p class="m">' + (n ? esc(fmtNum(n)) : 'No number yet') + '</p><div class="stack">' +
+      (n && me ? '<button class="btn w" data-act="callMeOpen">Katya, call me</button>' : '') +
+      (n && !me ? '<button class="btn w" data-kcall="' + i + '">Have Katya call ' + esc(String(c.name).split(' ')[0]) + '</button>' : '') +
+      (n && !me ? '<div class="btns"><a class="btn ghost" href="tel:' + esc(n) + '">Call from phone</a><a class="btn ghost" href="sms:' + esc(n) + '">Text</a></div>' : '') +
+      '<button class="btn ghost w" data-pedit="' + i + '">Edit</button></div>');
   }
 
   /* ---------- views ---------- */
   var V = {};
   V.today = function () {
-    if (!ST.calls) return loading();
-    var cs = calls(), td = cs.filter(function (c) { return day(c.at) === 'Today'; }), q = outbox();
-    var wk = Date.now() - 7 * 864e5, miss = cs.filter(function (c) { return new Date(c.at) > wk && /Voicemail|No answer|Failed/.test(c.outcome); });
-    var r = ((ST.boot && ST.boot.routines) || []), nx = TTG() ? null : r[0];
-    var hr = new Date().getHours();
-    return '<h1>' + (hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening') + '</h1><p class="sub">' + (TTG() ? 'TTG business calls' : 'Your life calls') + '</p>' + favRow() +
-      (nx ? '<div class="card hero"><div class="m">Scheduled routine</div><div class="big">' + esc(nx.name) + '</div><div class="m">' + esc(nx.when) + '</div><div class="actions"><a class="btn" href="#/' + ST.P + '/routines">See routines</a></div></div>'
-        : '<div class="card hero"><div class="m">TTG</div><div class="big">No scheduled business calls</div><div class="m">Business calls only go out when you start one and confirm.</div><div class="actions"><a class="btn w2" href="#/ttg/new">Start a call</a></div></div>') +
-      '<div class="grid2" style="margin-top:10px"><a class="tile" href="#/' + ST.P + '/calls"><b>' + td.length + '</b><span class="m">Calls today</span></a><a class="tile" href="#/' + ST.P + '/queue"><b>' + q.length + '</b><span class="m">Waiting for approval</span></a></div>' +
-      '<h2>Latest calls <a href="#/' + ST.P + '/calls">All calls</a></h2>' + (cs.length ? '<div class="card">' + cs.slice(0, 3).map(callRow).join('') + '</div>' : empty('No calls yet')) +
-      (miss.length ? '<h2>Missed this week</h2><div class="card">' + miss.slice(0, 3).map(callRow).join('') + '</div>' + (miss.length > 3 ? '<p class="m">' + (miss.length - 3) + ' more in Calls → filter “Not reached”.</p>' : '') : '') +
-      (q.length ? '<h2>Waiting for you <a href="#/' + ST.P + '/queue">Open</a></h2><div class="card">' + q.slice(0, 2).map(function (x) { return '<div class="row"><div class="grow"><div class="t ell">' + (x.ch === 'email' ? 'Email' : 'Text') + ' to ' + esc(x.to) + '</div><div class="m ell">' + esc(x.body) + '</div></div></div>'; }).join('') + '</div>' : '');
+    var cs = calls(), q = outbox(), r = TTG() ? [] : ((ST.boot && ST.boot.routines) || []);
+    var hero = TTG()
+      ? '<div class="card hero"><div class="big">Call someone for TTG</div><div class="hm">Katya calls, says she is an AI assistant, and the call shows up here with a summary.</div><div class="actions"><a class="btn w2" href="#/ttg/new">Start a call</a></div></div>'
+      : '<div class="card hero"><div class="big">Katya, call me</div><div class="hm">She calls your phone now. Pick what it is about.</div><div class="actions"><button class="btn w2" data-act="callMeOpen">Call me now</button><button class="btn" data-cm="goodnight">Goodnight call</button></div></div>';
+    var pend = ST.pending && Date.now() - ST.pending < 3 * 60e3 ? '<div class="note okbox" role="status" style="margin-top:10px">Katya is calling you now. The call shows up below when it ends.</div>' : '';
+    var nq = q.length ? '<a class="card needs" href="#/' + ST.P + '/queue"><div class="grow"><div class="t">' + q.length + ' ' + (q.length === 1 ? 'draft' : 'drafts') + ' waiting for your OK</div><div class="m ell">' + esc(q[0].body) + '</div></div><span class="tag warn">Review</span></a>' : '';
+    var up = r.length ? '<h2>Coming up</h2><div class="card">' + r.map(function (x) { var nx = nextRoutine(x.when);
+      return '<a class="row link" href="#/' + ST.P + '/routines"><div class="grow"><div class="t">' + esc(x.name) + '</div><div class="m">' + esc(nx ? 'Next: ' + nx : x.when) + '</div></div><span class="chev">›</span></a>'; }).join('') + '</div>' : '';
+    return hero + pend + nq + favRow() + up +
+      '<h2>Recent <a href="#/' + ST.P + '/calls">All calls</a></h2>' + (!ST.calls ? loading() : cs.length ? '<div class="card">' + cs.slice(0, 4).map(callRow).join('') + '</div>' : empty('No calls yet', TTG() ? 'Calls you start show up here.' : 'Tap Call me now and Katya calls you.'));
   };
   V.calls = function () {
     if (!ST.calls) return loading();
     var cs = calls(), f = ST.f, types = ['All'], ppl = {};
     cs.forEach(function (c) { if (types.indexOf(c.type) < 0) types.push(c.type); ppl[c.person] = 1; });
     types.push('Not reached');
-    var ps = personas();
     var list = cs.filter(function (c) {
       if (f.type === 'Not reached') { if (!/Voicemail|No answer|Failed/.test(c.outcome)) return false; } else if (f.type !== 'All' && c.type !== f.type) return false;
       if (f.person && c.person !== f.person) return false;
-      if (f.persona) { var p = ps.filter(function (x) { return x.name === f.persona; })[0]; if (p && p.types.indexOf(c.type) < 0) return false; }
       return true; });
     var groups = [], last = null;
     list.forEach(function (c) { var d = day(c.at); if (d !== last) { groups.push([d, []]); last = d; } groups[groups.length - 1][1].push(c); });
-    return '<h1>Calls</h1><p class="sub">' + cs.length + ' calls in ' + (TTG() ? 'TTG' : 'Life') + (ST.live === false ? ' · saved copy' : '') + '</p>' +
-      '<div class="flabel" style="margin-top:0">Type</div><div class="chips">' + types.map(function (t) { return '<button class="chip ' + (f.type === t ? 'on' : '') + '" data-ft="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
-      '<div class="grid2"><div><div class="flabel">Persona</div><select id="fpersona"><option value="">All personas</option>' + ps.map(function (p) { return '<option ' + (f.persona === p.name ? 'selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></div>' +
-      '<div><div class="flabel">Person</div><select id="fperson"><option value="">Everyone</option>' + Object.keys(ppl).sort().map(function (p) { return '<option ' + (f.person === p ? 'selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select></div></div>' +
-      (list.length ? groups.map(function (g) { return '<h2>' + esc(g[0]) + '<span class="m" style="text-transform:none;letter-spacing:0">' + g[1].length + '</span></h2><div class="card">' + g[1].map(callRow).join('') + '</div>'; }).join('') : empty('No calls match', 'Try “All” or a different person.'));
+    var srch = '<form id="askf" class="search" role="search"><span aria-hidden="true">⌕</span><input id="cq" type="search" enterkeyhint="search" aria-label="Search what was said" placeholder="Search what was said, e.g. ' + (TTG() ? 'interview' : 'dentist') + '" value="' + esc(ST.askq || '') + '" autocomplete="off"></form>';
+    if (ST.asking || ST.ask) return '<h1>Calls</h1>' + srch + askResults() + '<button class="btn ghost w" data-act="clearAsk" style="margin-top:10px">Back to all calls</button>';
+    return '<h1>Calls</h1>' + srch +
+      '<div class="chips">' + types.map(function (t) { return '<button class="chip ' + (f.type === t ? 'on' : '') + '" data-ft="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
+      (Object.keys(ppl).length > 1 ? '<select id="fperson" aria-label="Person"><option value="">Everyone</option>' + Object.keys(ppl).sort().map(function (p) { return '<option ' + (f.person === p ? 'selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select>' : '') +
+      (ST.live === false ? '<p class="m">Saved copy. Bland is not connected right now.</p>' : '') +
+      (list.length ? groups.map(function (g) { return '<h2>' + esc(g[0]) + '<span class="m cnt">' + g[1].length + '</span></h2><div class="card">' + g[1].map(callRow).join('') + '</div>'; }).join('') : empty('No calls match', 'Try All or a different person.'));
   };
+  function askResults() {
+    var a = ST.ask;
+    if (ST.asking) return loading('Reading your calls…');
+    if (a.err) return empty('Search failed', a.err);
+    return '<div class="note">' + esc(a.answer) + '</div>' + (a.hits && a.hits.length ? '<div class="card" style="margin-top:10px">' + a.hits.map(function (h) {
+      var s = esc(h.snip); (a.words || []).forEach(function (w) { var x = String(w).replace(/[^a-z0-9]/gi, ''); if (x) s = s.replace(new RegExp('(' + x + ')', 'ig'), '<mark>$1</mark>'); });
+      return '<a class="hit" href="#/' + ST.P + '/call/' + encodeURIComponent(h.id) + '"><div class="t">' + esc(h.type) + ' · ' + esc(h.person) + ' <span class="m">' + esc(when(h.at)) + '</span></div><div class="m">…' + s + '…</div></a>'; }).join('') + '</div>' : '');
+  }
   V.call = function (id) {
     id = decodeURIComponent(id || '');
     var base = (ST.calls || []).filter(function (c) { return c.id === id; })[0], d = ST.det[id];
     if (!d) { if (!ST.det['_' + id]) { ST.det['_' + id] = 1; api('call2', { id: id }).then(function (j) { ST.det[id] = j; draw(1); }).catch(function (e) { ST.det[id] = { err: e.message }; draw(1); }); } }
     var c = (d && d.call) || base; if (!c) return d && d.err ? empty('Could not open this call', d.err) : loading('Opening call…');
-    var tr = d && d.transcript;
-    return '<h1>' + esc(c.type || 'Call') + '</h1><p class="sub">' + esc(c.person) + ' · ' + esc(when(c.at)) + '</p>' +
-      '<div class="btns" style="margin-bottom:12px">' + outTag(c.outcome) + '<span class="tag">' + (c.inbound ? 'Incoming' : 'Outgoing') + '</span>' + guessTag(c) + '</div>' +
-      (c.sure === false ? '<div class="note" style="margin-bottom:10px"><b>Why this type:</b> ' + esc(c.why) + '. It is a best guess from the first sentence and transcript.</div>' : '') +
-      '<div class="stat"><div><b>' + esc(dur(c.min)) + '</b><span class="m">Length</span></div><div><b>' + esc(c.turns != null ? c.turns : 'n/a') + '</b><span class="m">Lines spoken</span></div><div><b>' + (c.lat != null ? esc(c.lat) + 's' : 'n/a') + '</b><span class="m">Avg. gap per reply</span></div></div>' +
+    var tr = d && d.transcript, you = c.person === 'You';
+    var again = c.inbound ? '' : you && !TTG() ? '<button class="btn" data-act="callMeOpen">Call me again</button>' : '<button class="btn" data-again="' + esc(c.to) + '">Have Katya call again</button>';
+    return '<h1>' + esc(callTitle(c)) + '</h1><p class="sub">' + esc(when(c.at)) + (c.min ? ' · ' + esc(dur(c.min)) : '') + '</p>' +
+      '<div class="btns tagrow">' + outTag(c.outcome) + '<span class="tag">' + (c.inbound ? 'Incoming' : 'Outgoing') + '</span>' + guessTag(c) + '</div>' +
       '<h2>Summary</h2><div class="card pad sumtxt">' + (c.summary ? esc(c.summary) : '<span class="m">No summary from Bland for this call.</span>') + '</div>' +
       (c.err ? '<div class="note warnbox">Error: ' + esc(c.err) + '</div>' : '') +
-      '<h2>Transcript</h2>' + (!d ? loading('Loading transcript…') : tr && tr.length ? '<div class="tr">' + tr.map(function (t) { var k = t.u === 'user'; return '<div class="who ' + (k ? 'r' : '') + '">' + (k ? esc(c.person === 'You' ? 'You' : c.person) : (t.u === 'assistant' ? esc(agentName(c)) : esc(t.u))) + '</div><div class="bub ' + (k ? 'u' : 'k') + '">' + esc(t.t) + '</div>'; }).join('') + '</div>' : '<div class="card pad m">No transcript (the call was not picked up or was too short).</div>') +
-      '<h2>Actions</h2><div class="btns"><a class="btn ghost" href="#/' + ST.P + '/ask">Ask across calls</a>' + (!c.inbound ? '<button class="btn" data-again="' + esc(c.to) + '">Call again…</button>' : '') + '</div>';
+      (again ? '<div class="btns" style="margin-top:12px">' + again + '</div>' : '') +
+      '<h2>Transcript</h2>' + (!d ? loading('Loading transcript…') : tr && tr.length ? '<div class="tr">' + tr.map(function (t) { var k = t.u === 'user'; return '<div class="who ' + (k ? 'r' : '') + '">' + (k ? esc(you ? 'You' : c.person) : (t.u === 'assistant' ? esc(agentName(c)) : esc(t.u))) + '</div><div class="bub ' + (k ? 'u' : 'k') + '">' + esc(t.t) + '</div>'; }).join('') + '</div>' : '<div class="card pad m">No transcript (the call was not picked up or was too short).</div>') +
+      '<h2>Details</h2><div class="stat"><div><b>' + esc(dur(c.min)) + '</b><span class="m">Length</span></div><div><b>' + esc(c.turns != null ? c.turns : 'n/a') + '</b><span class="m">Lines spoken</span></div><div><b>' + (c.lat != null ? esc(c.lat) + 's' : 'n/a') + '</b><span class="m">Avg. reply gap</span></div></div>' +
+      (c.sure === false ? '<div class="note" style="margin-top:10px"><b>Why this type:</b> ' + esc(c.why) + '. It is a best guess from the first sentence and transcript.</div>' : '');
   };
-  V.ask = function () {
-    var a = ST.ask;
-    var ex = TTG() ? ['RBT application', 'interview', 'availability'] : ['Shacharit', 'kollel', 'therapy', 'wake up'];
-    return '<h1>Ask</h1><p class="sub">Search what was said on every ' + (TTG() ? 'TTG' : 'Life') + ' call</p>' +
-      '<form id="askf" class="search"><span>⌕</span><input id="cq" placeholder="e.g. ' + esc(ex[0]) + '" value="' + esc(ST.askq || '') + '" autocomplete="off"></form>' +
-      '<div class="chips">' + ex.map(function (e) { return '<button class="chip" data-ex="' + esc(e) + '">' + esc(e) + '</button>'; }).join('') + '</div>' +
-      (ST.asking ? loading('Reading transcripts…') : a ? (a.err ? empty('Search failed', a.err) : '<div class="note">' + esc(a.answer) + '</div>' + (a.hits.length ? '<div class="card" style="margin-top:10px">' + a.hits.map(function (h) {
-        var s = esc(h.snip); (a.words || []).forEach(function (w) { s = s.replace(new RegExp('(' + w.replace(/[^a-z0-9]/g, '') + ')', 'ig'), '<mark>$1</mark>'); });
-        return '<a class="hit" href="#/' + ST.P + '/call/' + encodeURIComponent(h.id) + '"><div class="t">' + esc(h.type) + ' · ' + esc(h.person) + ' <span class="m">' + esc(when(h.at)) + '</span></div><div class="m">…' + s + '…</div></a>'; }).join('') + '</div>' : '')) :
-        '<p class="m">Searches summaries and transcripts. Only ' + (TTG() ? 'TTG' : 'Life') + ' calls are searched; the two are never mixed.</p>');
-  };
+  V.ask = function () { ST.f = ST.f || { type: 'All', person: '' }; return V.calls(); };
   V.queue = function () {
     var q = outbox();
     return '<h1>Approve</h1><p class="sub">Texts and emails wait here. Nothing is sent automatically.</p>' +
@@ -166,10 +210,13 @@
     var ch = ST.ch, dr = ST.draft;
     var head = '<h1>New ' + ch.toLowerCase() + '</h1><p class="sub">' + (ch === 'Call' ? 'Katya calls only after you confirm' : 'Goes to Approve first. Nothing sends by itself.') + '</p>' +
       '<div class="seg" style="margin:0 0 14px">' + ['Call', 'Text', 'Email'].map(function (c) { return '<button class="' + (ch === c ? 'on' : '') + '" data-ch="' + c + '">' + c + '</button>'; }).join('') + '</div>';
-    if (ch === 'Call') return head + '<div class="flabel">Phone number</div><input id="nto" inputmode="tel" placeholder="(555) 555-5555" value="' + esc(dr.to || '') + '">' +
+    var who = people().filter(function (c) { return (c.portal || 'life') === ST.P && !/^me\b/i.test(c.name || '') && String(c.num || '').replace(/\D/g, '').length >= 10; })
+      .sort(function (a, b) { return (b.fav ? 1 : 0) - (a.fav ? 1 : 0); }).slice(0, 12);
+    if (ch === 'Call') return head + (who.length ? '<div class="flabel">Who</div><div class="chips">' + who.map(function (c) { var on = dr.who === c.name; return '<button class="chip' + (on ? ' on' : '') + '" data-who="' + esc(people().indexOf(c)) + '">' + esc(c.name) + '</button>'; }).join('') + '</div>' : '') +
+      '<div class="flabel">Phone number</div><input id="nto" inputmode="tel" placeholder="(555) 555-5555" value="' + esc(dr.to || '') + '">' +
       '<div class="flabel">What is the call for? (keep it short)</div><textarea id="ntask" rows="4" placeholder="' + (TTG() ? 'Ask if they are still interested in the RBT role and when they can talk.' : 'Remind me to leave for the 3 PM pickup.') + '">' + esc(dr.task || '') + '</textarea>' +
       '<div class="m" id="nwords" style="margin-top:4px"></div>' + (TTG() ? '<div class="note" style="margin-top:10px">Business calls always start: “This is an automated AI assistant calling on behalf of Roni Gafni.” Not recorded.</div>' : '') +
-      '<button class="btn w" style="margin-top:16px" data-act="confirmCall">Review and call…</button>';
+      '<button class="btn w" style="margin-top:16px" data-act="confirmCall">Review and call</button>' + (TTG() ? '' : '<p class="m">Want Katya to call you instead? <button class="lnk" data-act="callMeOpen">Katya, call me</button></p>');
     return head + '<div class="flabel">To (' + (ch === 'Text' ? 'name or number' : 'email') + ')</div><input id="nto" value="' + esc(dr.to || '') + '">' +
       (ch === 'Email' ? '<div class="flabel">Subject</div><input id="nsubj" value="' + esc(dr.subj || '') + '">' : '') +
       '<div class="flabel">Message</div><textarea id="nbody" rows="5">' + esc(dr.body || '') + '</textarea>' +
@@ -304,21 +351,21 @@
   };
   var people = function () { return ((ST.boot && ST.boot.contacts) || []); };
   function favRow() {
-    var f = people().filter(function (c) { return c.fav && (c.portal || 'life') === ST.P; }); if (!f.length) return '';
-    return '<h2>Favorites <a href="#/' + ST.P + '/people">Edit</a></h2><div class="favs">' + f.map(function (c) { var i = people().indexOf(c);
-      return '<button class="fav" data-person="' + i + '"><span class="av">' + esc(ini(c.name)) + '</span><span class="fn">' + esc(c.name) + '</span></button>'; }).join('') + '</div>';
+    var f = people().filter(function (c) { return c.fav && (c.portal || 'life') === ST.P && !/^me\b/i.test(c.name || '') && c.num; }); if (!f.length) return '';
+    return '<h2>Have Katya call <a href="#/' + ST.P + '/people">People</a></h2><div class="favs">' + f.map(function (c) { var i = people().indexOf(c);
+      return '<button class="fav" data-pact="' + i + '"><span class="av">' + esc(ini(c.name)) + '</span><span class="fn">' + esc(c.name) + '</span></button>'; }).join('') + '</div>';
   }
   V.people = function () {
     var ps = people(), pick = 'contacts' in navigator && 'ContactsManager' in window;
     return '<h1>People</h1><p class="sub">Favorites and contacts. Private to you.</p>' +
       '<div class="btns"><button class="btn ghost" data-act="pAdd">Add person</button>' + (pick ? '<button class="btn ghost" data-act="pPick">Import from phone</button>' : '<label class="btn ghost">Import .vcf<input type="file" id="vcf" accept=".vcf,text/vcard,text/x-vcard" hidden></label>') + '</div>' +
       (ps.length ? '<div class="card" style="margin-top:12px">' + ps.map(function (c, i) {
-        return '<button class="row link plain" data-person="' + i + '"><div class="av">' + esc(ini(c.name)) + '</div><div class="grow"><div class="t">' + esc(c.name) + '</div><div class="m">' + (c.num ? esc(fmtNum(c.num)) : 'No number yet') + ' · ' + (c.portal === 'ttg' ? 'TTG' : 'Life') + '</div></div>' + (c.fav ? '<span class="tag">Favorite</span>' : '') + '<span class="chev">›</span></button>'; }).join('') + '</div>' : empty('No people yet')) +
-      '<p class="m">Calls from here open your phone’s dialer.</p>';
+        return '<button class="row link plain" data-pact="' + i + '"><div class="av">' + esc(ini(c.name)) + '</div><div class="grow"><div class="t">' + esc(c.name) + '</div><div class="m">' + (c.num ? esc(fmtNum(c.num)) : 'No number yet') + ' · ' + (c.portal === 'ttg' ? 'TTG' : 'Life') + '</div></div>' + (c.fav ? '<span class="tag">Favorite</span>' : '') + '<span class="chev">›</span></button>'; }).join('') + '</div>' : empty('No people yet')) +
+      '<p class="m">Tap a person to have Katya call them, or call them yourself.</p>';
   };
   function personSheet(i) {
     var c = people()[i] || { name: '', num: '', email: '', fav: true, portal: ST.P }, n = String(c.num || '').replace(/[^\d+]/g, '');
-    sheet('<h3 style="margin:0 0 6px">' + esc(c.name || 'New person') + '</h3>' + (n ? '<div class="btns" style="margin-bottom:14px"><a class="btn" href="tel:' + esc(n) + '">Call from my phone</a><a class="btn ghost" href="sms:' + esc(n) + '">Text</a></div>' : (c.name ? '<p class="m">Add a number to call or text.</p>' : '')) +
+    sheet('<h3 style="margin:0 0 6px">' + esc(c.name || 'New person') + '</h3>' + (c.name && !n ? '<p class="m">Add a number to call or text.</p>' : '') +
       '<div class="flabel">Name</div><input id="pn" value="' + esc(c.name) + '"><div class="flabel">Phone</div><input id="pt" type="tel" inputmode="tel" value="' + esc(c.num || '') + '" placeholder="Not set"><div class="flabel">Email</div><input id="pe" type="email" value="' + esc(c.email || '') + '" placeholder="Not set">' +
       '<div class="row"><div class="grow"><div class="t">Favorite</div></div><button class="sw' + (c.fav ? ' on' : '') + '" id="pf" data-pfav="1"></button></div>' +
       '<div class="btns">' + (people()[i] ? '<button class="btn red" data-pdel="' + i + '">Remove</button>' : '') + '<button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-psave="' + (people()[i] ? i : -1) + '">Save</button></div>');
@@ -340,8 +387,10 @@
       .catch(function (x) { ST.playing = null; toast(x.message); draw(1); });
   }
   V.more = function () {
-    var it = [['callset', 'Call settings', 'Voice, turn-taking, voicemail'], ['people', 'People', 'Favorites and contacts'], ['routines', 'Routines', 'Scheduled calls and pauses'], ['personas', 'Personas', 'Voice and instructions']].concat(TTG() ? [] : [['line', 'Phone line', 'Who answers each caller']]).concat([ ['insights', 'Insights', 'Answer rate and talk time'], ['new', 'New call, text or email', ''], ['settings', 'Settings', 'Safety, privacy, this phone']]);
-    return '<h1>More</h1><p class="sub">' + (TTG() ? 'TTG' : 'Life') + '</p>' + (STANDALONE ? '<div class="card"><div class="row"><div class="grow"><div class="t">Installed ✓</div><div class="m">This is the Home Screen app</div></div></div></div>' : '') + '<div class="card">' + it.map(function (i) { return '<a class="row link" href="#/' + ST.P + '/' + i[0] + '"><div class="grow"><div class="t">' + i[1] + '</div>' + (i[2] ? '<div class="m">' + i[2] + '</div>' : '') + '</div><span class="chev">›</span></a>'; }).join('') + '</div>';
+    var nq = outbox().length;
+    var it = [['queue', 'Approve', nq ? nq + ' waiting for your OK' : 'Texts and emails you wrote'], ['routines', 'Routines', 'Wake-up and calendar calls'], ['personas', 'Personas', 'How Katya sounds on each kind of call'], ['callset', 'Call settings', 'Voice, turn-taking, voicemail']]
+      .concat(TTG() ? [] : [['line', 'Phone line', 'Who answers each caller']]).concat([['insights', 'Insights', 'Answer rate and talk time'], ['settings', 'Settings', 'Safety, privacy, this phone']]);
+    return '<h1>More</h1>' + '<div class="card">' + it.map(function (i) { return '<a class="row link" href="#/' + ST.P + '/' + i[0] + '"><div class="grow"><div class="t">' + i[1] + '</div>' + (i[2] ? '<div class="m">' + i[2] + '</div>' : '') + '</div>' + (i[0] === 'queue' && nq ? '<span class="tag warn">' + nq + '</span>' : '') + '<span class="chev">›</span></a>'; }).join('') + '</div>';
   };
   V.line = function () {
     var ls = lineSetup();
@@ -359,26 +408,29 @@
   V.gate = function () { return '<div class="gate"><h1>Katya Calls</h1><p class="sub">Private app</p><div class="card pad">' + (ST.err ? '<p><b>' + esc(ST.err) + '</b></p>' : '') + '<p>Open this app once from your personal link (it ends in <b>#k=…</b>). After that it remembers this phone.</p><p class="m">No calls or keys are stored in this app; they come from your private server.</p></div></div>'; };
 
   /* ---------- shell ---------- */
-  var ICO = {today: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>', calls: '<path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>', ask: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>', queue: '<path d="M4 12l5 5L20 6"/>', more: '<path d="M4 6h16M4 12h16M4 18h16"/>'};
-  var NAV = [['today', '⌂', 'Today'], ['calls', '☏', 'Calls'], ['ask', '⌕', 'Ask'], ['queue', '✓', 'Approve'], ['more', '☰', 'More']];
-  var TITLE = { today: 'Today', calls: 'Calls', call: 'Call', ask: 'Ask', queue: 'Approve', new: 'New', routines: 'Routines', personas: 'Personas', persona: 'Persona', insights: 'Insights', settings: 'Settings', more: 'More', callset: 'Call settings', voices: 'Voice', people: 'People', line: 'Phone line' };
-  var PARENT = { call: 'calls', persona: 'personas', routines: 'more', personas: 'more', insights: 'more', settings: 'more', new: 'today', callset: 'more', voices: 'callset', people: 'more', line: 'more' };
+  var ICO = {today: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>', calls: '<path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>', people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>', more: '<path d="M4 6h16M4 12h16M4 18h16"/>'};
+  var NAV = [['today', '⌂', 'Home'], ['calls', '☏', 'Calls'], ['people', '', 'People'], ['more', '☰', 'More']];
+  var TITLE = { today: 'Home', calls: 'Calls', call: 'Call', ask: 'Ask', queue: 'Approve', new: 'New', routines: 'Routines', personas: 'Personas', persona: 'Persona', insights: 'Insights', settings: 'Settings', more: 'More', callset: 'Call settings', voices: 'Voice', people: 'People', line: 'Phone line' };
+  var PARENT = { call: 'calls', ask: 'calls', queue: 'more', persona: 'personas', routines: 'more', personas: 'more', insights: 'more', settings: 'more', new: 'today', callset: 'more', voices: 'callset', line: 'more' };
+  var TABOF = { call: 'calls', ask: 'calls', new: 'today' };
   function parse() { var h = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean); if (h[0] === 'life' || h[0] === 'ttg') { ST.P = h.shift(); localStorage.setItem('calls.p', ST.P); } ST.route = h.length ? h : ['today']; if (!V[ST.route[0]] || ST.route[0] === 'gate') ST.route = ['today']; }
   function draw(keep) {
     var r = KEY && !ST.fatal ? ST.route[0] : 'gate', ttg = TTG();
-    document.documentElement.style.setProperty('--acc', ttg ? 'var(--ttg)' : 'var(--life)'); document.documentElement.style.setProperty('--accs', ttg ? '#e3f2ec' : '#e8eefc');
-    var act = PARENT[r] && r !== 'new' ? (r === 'call' ? 'calls' : 'more') : r, home = r !== 'today' && r !== 'gate', par = PARENT[r];
-    if (r === 'call' && ST.from === 'ask') par = 'ask';
+    document.documentElement.style.setProperty('--acc', ttg ? 'var(--ttg)' : 'var(--life)'); document.documentElement.style.setProperty('--accs', ttg ? 'var(--ttgs)' : 'var(--lifes)');
+    var act = TABOF[r] || (NAV.some(function (n) { return n[0] === r; }) ? r : 'more'), home = r !== 'today' && r !== 'gate', par = PARENT[r];
+    
     $('#loc').innerHTML = (home ? '<a class="homeb" href="#/' + ST.P + '/today" aria-label="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Home</a>' : '') + (par ? '<a class="backl" href="#/' + ST.P + '/' + par + '">‹ ' + TITLE[par] + '</a>' : '<div class="brand">Katya Calls<small>Roni · ' + (ttg ? 'TTG' : 'Life') + '</small></div>');
     $('#seg').innerHTML = '<button class="' + (!ttg ? 'on' : '') + '" data-p="life">Life</button><button class="' + (ttg ? 'on' : '') + '" data-p="ttg">TTG</button>';
     $('#seg').style.display = r === 'gate' ? 'none' : ''; $('#newb').style.display = r === 'gate' || r === 'new' ? 'none' : ''; $('#newb').href = '#/' + ST.P + '/new'; showInst();
     var nq = outbox().length;
-    $('#tabs').innerHTML = r === 'gate' ? '' : NAV.map(function (n) { return '<a href="#/' + ST.P + '/' + n[0] + '" class="' + (act === n[0] ? 'on' : '') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICO[n[0]] + '</svg>' + n[2] + (n[0] === 'queue' && nq ? ' (' + nq + ')' : '') + '</a>'; }).join('');
+    $('#tabs').innerHTML = r === 'gate' ? '' : NAV.map(function (n) { return '<a href="#/' + ST.P + '/' + n[0] + '" class="' + (act === n[0] ? 'on' : '') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICO[n[0]] + '</svg>' + n[2] + (n[0] === 'more' && nq ? '<span class="badge" aria-label="' + nq + ' waiting">' + nq + '</span>' : '') + '</a>'; }).join('');
     var m = $('#m'); m.innerHTML = V[r](ST.route[1]);
     if (!keep) { m.style.animation = 'none'; void m.offsetHeight; m.style.animation = ''; scrollTo(0, 0); }
     var t = $('#ntask'); if (t) { var u = function () { var w = t.value.trim().split(/\s+/).filter(String).length; $('#nwords').textContent = w ? w + ' words' + (w > 120 ? '. Shorter is faster (under 120).' : '') : ''; }; t.oninput = u; u(); }
   }
-  function saveDraft() { ['to', 'task', 'subj', 'body'].forEach(function (k) { var e = $('#n' + k); if (e) ST.draft[k] = e.value; }); }
+  function saveDraft() { ['to', 'task', 'subj', 'body'].forEach(function (k) { var e = $('#n' + k); if (e) ST.draft[k] = e.value; });
+    if (ST.draft.who) { var w = people().filter(function (c) { return c.name === ST.draft.who; })[0], d10 = function (x) { return String(x || '').replace(/\D/g, '').slice(-10); };
+      if (!w || d10(w.num) !== d10(ST.draft.to)) ST.draft.who = ''; } }
   function load() {
     if (!KEY) return draw();
     api('boot').then(function (b) { ST.boot = b; draw(1); return api('calls2', { n: 100 }); })
@@ -403,7 +455,24 @@
       api('saveCallSettings', { settings: ST.csd }).then(function (j) { ST.cs = j; ST.csd = JSON.parse(JSON.stringify(j.settings)); ST.csDirty = false; toast('Saved. Next calls use this.'); draw(1); }).catch(function (x) { t.disabled = false; toast(x.message); }); return; }
     if (d.act === 'csPreview') { var ty = ST.csT === 'global' ? (TTG() ? 'business' : 'personal') : ST.csT;
       api('previewCall', { type: ty }).then(function (j) { sheet('<h3 style="margin:0 0 4px">Sent to Bland for ' + CST[ty] + '</h3><p class="m">Saved settings only. Nothing is called.</p><pre class="prompt json">' + esc(JSON.stringify(j.body, null, 1)) + '</pre><button class="btn w" data-act="cancel">Close</button>'); }).catch(function (x) { toast(x.message); }); return; }
-    if (d.person) { personSheet(+d.person); return; }
+    if (d.pact != null) { personActions(+d.pact); return; }
+    if (d.pedit != null) { personSheet(+d.pedit); return; }
+    if (d.kcall != null) { var kc = people()[+d.kcall]; closeSheet(); if (!kc) return; ST.ch = 'Call'; ST.draft = { to: fmtNum(kc.num), who: kc.name }; if (location.hash.indexOf('/new') > 0) draw(); else go('new'); return; }
+    if (d.who != null) { saveDraft(); var wc = people()[+d.who]; if (wc) { ST.draft.to = fmtNum(wc.num); ST.draft.who = wc.name; } draw(1); return; }
+    if (d.act === 'callMeOpen') { callMeSheet(); return; }
+    if (d.cm) { callMeSheet(d.cm); return; }
+    if (d.cmk) { var cn = $('#cmnote'); if (cn) ST.cm.note = cn.value; callMeSheet(d.cmk); return; }
+    if (d.act === 'saveMe') { var mn = String(($('#menum') || {}).value || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      if (mn.length !== 10) return callMeSheet(null, 'Enter a 10-digit number');
+      t.disabled = true; var pl = people().slice(); pl.push({ name: 'Me', num: mn, email: '', fav: false, portal: 'life' });
+      api('saveContacts2', { list: pl }).then(function (j) { ST.boot.contacts = j.contacts; if (meContact()) callMeSheet(); else callMeSheet(null, 'Saved, but the number did not come back. Check People.'); })
+        .catch(function (x) { callMeSheet(null, 'Not saved: ' + x.message); }); return; }
+    if (d.act === 'callMe') { var me = meContact(); if (!me) return callMeSheet(); var nt = $('#cmnote'); ST.cm.note = nt ? nt.value.trim() : '';
+      t.disabled = true; t.textContent = 'Calling…';
+      api('start', { to: String(me.num).replace(/\D/g, ''), task: callMeTask(ST.cm.k, ST.cm.note), portal: 'life', type: 'personal' })
+        .then(function () { closeSheet(); ST.cm = null; ST.pending = Date.now(); toast('Katya is calling you now'); draw(1); setTimeout(load, 20000); setTimeout(load, 90000); })
+        .catch(function (x) { callMeSheet(null, x.message); }); return; }
+    if (d.act === 'clearAsk') { ST.ask = null; ST.asking = false; ST.askq = ''; if (ST.route[0] === 'ask') go('calls'); else draw(); return; }
     if (d.act === 'pAdd') { personSheet(-1); return; }
     if (d.pfav) { t.classList.toggle('on'); return; }
     if (d.psave) { var i = +d.psave, ps = people().slice(), c = { name: $('#pn').value.trim(), num: $('#pt').value.trim(), email: $('#pe').value.trim(), fav: $('#pf').classList.contains('on'), portal: (ps[i] || {}).portal || ST.P };
@@ -413,7 +482,7 @@
     if (d.ft) { ST.f.type = d.ft; draw(1); }
     if (d.ex) { ST.askq = d.ex; doAsk(); }
     if (d.ch) { saveDraft(); ST.ch = d.ch; draw(1); }
-    if (d.again) { ST.ch = 'Call'; ST.draft = { to: fmtNum(d.again) }; go('new'); }
+    if (d.again) { ST.ch = 'Call'; var ag = people().filter(function (c) { return String(c.num || '').replace(/\D/g, '').slice(-10) === String(d.again).replace(/\D/g, '').slice(-10); })[0]; ST.draft = { to: fmtNum(d.again), who: ag ? ag.name : '' }; go('new'); }
     if (d.ob) { var b = document.querySelector('[data-body="' + d.id + '"]'); t.disabled = true;
       api(d.ob, { id: d.id, body: b && b.value }).then(function (j) { ST.boot.outbox = j.outbox; toast(d.ob === 'outboxApprove' ? 'Approved. Not sent automatically' : d.ob === 'outboxDiscard' ? 'Discarded' : 'Saved'); draw(1); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
     if (d.act === 'toQueue') { saveDraft(); var dr = ST.draft; if (!dr.to || !dr.body) return toast('Add who it is for and a message');
@@ -421,7 +490,7 @@
         .then(function (j) { ST.boot.outbox = j.outbox; ST.draft = {}; toast('Added to Approve. Not sent.'); go('queue'); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
     if (d.act === 'confirmCall') { saveDraft(); var dc = ST.draft, dg = String(dc.to || '').replace(/\D/g, '');
       if (dg.length < 10) return toast('Enter a 10-digit number'); if (!dc.task || dc.task.length < 8) return toast('Say what the call is for');
-      sheet('<div class="t" style="font-size:19px">Place this call now?</div><p class="m">Katya will call <b>' + esc(fmtNum(dg)) + '</b> from ' + esc(fmtNum((ST.boot || {}).line)) + '.</p><div class="note" style="margin-bottom:14px">' + esc(dc.task) + '</div>' +
+      sheet('<div class="t" style="font-size:19px">Place this call now?</div><p class="m">Katya will call <b>' + esc((dc.who ? dc.who + ', ' : '') + fmtNum(dg)) + '</b> from ' + esc(fmtNum((ST.boot || {}).line)) + '.</p><div class="note" style="margin-bottom:14px">' + esc(dc.task) + '</div>' +
         '<div class="btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="placeCall">Call now</button></div>'); }
     if (d.peedit != null) { var pp = personas()[+d.peedit]; if (!pp) return; ST.peMsg = null; ST.pe = { key: pp.key, kid: !!pp.kid, name: pp.name, use: pp.use, voiceId: pp.voiceId || '', prompt: pp.prompt || '', types: (pp.typeKeys || []).slice(), errs: {} }; draw(); return; }
     if (d.act === 'peCancel') { ST.pe = null; draw(1); return; }
