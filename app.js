@@ -82,7 +82,7 @@
     return { agents: ag, byId: ids, routes: ls.routes.filter(function (r) { return r && r.label && ids[r.agent]; }) };
   }
   function agentName(c) { var ls = c && c.agent && lineSetup(), a = ls && ls.byId[c.agent]; return a ? a.name : 'Katya'; }
-  var outbox = function () { return ((ST.boot && ST.boot.outbox) || []).filter(function (x) { return x.portal === ST.P && x.status === 'draft'; }); };
+  var outbox = function () { return ((ST.boot && ST.boot.outbox) || []).filter(function (x) { return x.portal === ST.P && (x.status === 'draft' || x.status === 'failed'); }); };
   var personas = function () { return ((ST.boot && ST.boot.personaInfo) || []).filter(function (p) { return p.portal === ST.P; }); };
   function loading(t) { return '<div class="empty"><div class="t"><span class="spin"></span>' + esc(t || 'Loading your calls…') + '</div></div>'; }
   function empty(t, s) { return '<div class="empty"><div class="t">' + esc(t) + '</div>' + (s ? '<div>' + esc(s) + '</div>' : '') + '</div>'; }
@@ -94,31 +94,35 @@
   }
   function callTitle(c) { return c.person === 'You' ? (c.type || 'Call') + ' to you' : (c.person || 'Call') + (c.type ? ' · ' + c.type : ''); }
   /* ---------- call me (Katya calls Roni's own phone) ----------
-     The number comes from the private People list ("Me"), never from this public file. The sheet is the confirm step:
-     nothing is placed until "Call me now" is tapped. The server still enforces Shabbat/Yom Tov and the daily limit. */
-  var PURPOSE = [['checkin', 'Quick check-in', 'Purpose: a quick check-in. Ask how he is doing and what he needs.'],
-    ['goodnight', 'Goodnight', 'Purpose: a goodnight call. Be sweet and supportive. Nothing about business or work.'],
-    ['plan', 'Plan tomorrow', 'Purpose: help him plan tomorrow. Ask what is on tomorrow, help him put it in order, and read the short plan back at the end.'],
-    ['organize', 'Make a to-do list', 'Purpose: help him organize his stuff and make a to-do list. Ask what is on his mind, repeat each item back, and read the final list back at the end.']];
-  function meContact() { return people().filter(function (c) { return /^me\b/i.test(c.name || '') && String(c.num || '').replace(/\D/g, '').length >= 10; })[0] || null; }
-  function callMeTask(k, note) {
-    var p = PURPOSE.filter(function (x) { return x[0] === k; })[0] || PURPOSE[0];
-    return 'You are Katya, Roni\u2019s personal assistant. Roni just asked you to call him from the Calls app, so he is expecting you. ' +
-      'Open with one short warm line, like "Hi Roni, it\u2019s Katya." Keep your turns short and let him lead. ' + p[2] +
-      (note ? ' What he wrote: ' + note + '.' : '') +
-      ' If he asks you to do something, repeat it back in his own words. Stay on the line until he is done and never hang up on him early. When he says bye, say goodbye in one line and end the call.';
-  }
+     The server places the call to Roni's own cell and writes the task for the chosen type (callNow / callSchedule).
+     The sheet is the confirm step: nothing is placed or scheduled until the button is tapped.
+     The server enforces Shabbat/Yom Tov (now and at the scheduled time) and the daily limit. */
+  var PURPOSE = [['checkin', 'Quick check-in'], ['goodnight', 'Goodnight'], ['plan', 'Plan tomorrow'], ['todo', 'Make a to-do list'], ['wake', 'Wake me up']];
+  var c10 = function () { return (ST.boot && ST.boot.calls10) || {}; };
+  var plabel = function (k) { var p = PURPOSE.filter(function (x) { return x[0] === k; })[0]; return p ? p[1] : 'Call'; };
+  function nextQuarter() { var d = new Date(Date.now() + 20 * 60e3); d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
   function callMeSheet(k, err) {
-    var me = meContact(); ST.cm = ST.cm || { k: 'checkin', note: '' }; if (k) ST.cm.k = k;
-    if (!me) return sheet('<h3 class="sh">Your cell number</h3><p class="m">Katya needs it once to call you. It is saved in your private People list as "Me", not in the app.</p>' +
-      '<input id="menum" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-5555">' + (err ? '<div class="ferr" role="alert">' + esc(err) + '</div>' : '') +
-      '<div class="btns" style="margin-top:14px"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="saveMe">Save and continue</button></div>');
-    var d = String(me.num).replace(/\D/g, '');
-    sheet('<h3 class="sh">Katya, call me</h3><p class="m">She calls your cell ending ' + esc(d.slice(-4)) + ' right away.</p>' +
-      '<div class="flabel">What is it about?</div><div class="chips wrap">' + PURPOSE.map(function (x) { return '<button class="chip' + (ST.cm.k === x[0] ? ' on' : '') + '" data-cmk="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' +
-      '<div class="flabel">Anything to add? (optional)</div><textarea id="cmnote" rows="2" maxlength="400" placeholder="e.g. I need to call the school before 9">' + esc(ST.cm.note || '') + '</textarea>' +
+    ST.cm = ST.cm || { k: 'checkin', note: '', later: false, day: 'today', time: '' }; if (k) ST.cm.k = k;
+    var cm = ST.cm, sch = c10().scheduler || {}, me = c10().me || '';
+    if (cm.later && !cm.time) cm.time = cm.k === 'wake' ? '07:00' : nextQuarter();
+    sheet('<h3 class="sh">Katya, call me</h3><p class="m">She calls your cell' + (me ? ' ending ' + esc(String(me).replace(/\D/g, '')) : '') + (cm.later ? ' at the time you pick.' : ' right away.') + '</p>' +
+      '<div class="flabel">What is it about?</div><div class="chips wrap">' + PURPOSE.map(function (x) { return '<button class="chip' + (cm.k === x[0] ? ' on' : '') + '" data-cmk="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' +
+      '<div class="flabel">When</div><div class="seg seg2"><button class="' + (!cm.later ? 'on' : '') + '" data-cmw="now">Now</button><button class="' + (cm.later ? 'on' : '') + '" data-cmw="later">Set a time</button></div>' +
+      (cm.later ? '<div class="when2"><div class="chips"><button class="chip' + (cm.day === 'today' ? ' on' : '') + '" data-cmd="today">Today</button><button class="chip' + (cm.day === 'tomorrow' ? ' on' : '') + '" data-cmd="tomorrow">Tomorrow</button></div>' +
+        '<input id="cmtime" type="time" step="300" value="' + esc(cm.time) + '" aria-label="Time"></div>' +
+        (sch.running === false ? '<div class="note warnbox" role="status" style="margin-top:8px">Scheduled calls are not switched on yet. Call me now still works.</div>' : '') : '') +
+      '<div class="flabel">Anything to add? (optional)</div><textarea id="cmnote" rows="2" maxlength="400" placeholder="' + (cm.k === 'wake' ? 'e.g. remind me about the 9 AM meeting' : 'e.g. I need to call the school before 9') + '">' + esc(cm.note || '') + '</textarea>' +
       (err ? '<div class="note warnbox" role="alert" style="margin-top:10px">' + esc(err) + '</div>' : '') +
-      '<div class="btns" style="margin-top:14px"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="callMe">Call me now</button></div>');
+      '<div class="btns" style="margin-top:14px"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn" data-act="callMe">' + (cm.later ? 'Schedule call' : 'Call me now') + '</button></div>');
+  }
+  function cmRead() { var n = $('#cmnote'), t = $('#cmtime'); if (!ST.cm) return; if (n) ST.cm.note = n.value; if (t) ST.cm.time = t.value; }
+  function schedList() { return (c10().scheduled || []).slice().sort(function (a, b) { return a.at < b.at ? -1 : 1; }); }
+  var SCHED_DONE = { placed: ['good', 'Called'], skipped: ['warn', 'Skipped'], missed: ['warn', 'Missed'], failed: ['bad', 'Did not call'], placing: ['', 'Calling'] };
+  function schedRows() {
+    var now = Date.now(), up = schedList().filter(function (s) { return s.status === 'scheduled'; }),
+      done = schedList().filter(function (s) { return SCHED_DONE[s.status] && s.status !== 'placed' && now - new Date(s.updated || s.at) < 12 * 3600e3; });
+    return up.map(function (s) { return '<div class="row"><div class="av sm">' + esc(s.type === 'wake' ? '\u23F0' : '\u260E') + '</div><div class="grow"><div class="t">' + esc(s.label || plabel(s.type)) + '</div><div class="m">' + esc(when(s.at)) + (s.note ? ' \u00B7 ' + esc(s.note) : '') + '</div></div><button class="btn sm ghost" data-scancel="' + esc(s.id) + '">Cancel</button></div>'; })
+      .concat(done.map(function (s) { var t = SCHED_DONE[s.status]; return '<div class="row"><div class="av sm">\u260E</div><div class="grow"><div class="t">' + esc(s.label || plabel(s.type)) + '</div><div class="m">' + esc(when(s.at)) + (s.why ? ' \u00B7 ' + esc(s.why) : '') + '</div></div><span class="tag ' + t[0] + '">' + t[1] + '</span></div>'; })).join('');
   }
   /* next time for a routine whose text reads like "Weekdays 7:45 AM"; anything else shows its own text */
   function nextRoutine(w) {
@@ -144,10 +148,11 @@
     var cs = calls(), q = outbox(), r = TTG() ? [] : ((ST.boot && ST.boot.routines) || []);
     var hero = TTG()
       ? '<div class="card hero"><div class="big">Call someone for TTG</div><div class="hm">Katya calls, says she is an AI assistant, and the call shows up here with a summary.</div><div class="actions"><a class="btn w2" href="#/ttg/new">Start a call</a></div></div>'
-      : '<div class="card hero"><div class="big">Katya, call me</div><div class="hm">She calls your phone now. Pick what it is about.</div><div class="actions"><button class="btn w2" data-act="callMeOpen">Call me now</button><button class="btn" data-cm="goodnight">Goodnight call</button></div></div>';
+      : '<div class="card hero"><div class="big">Katya, call me</div><div class="hm">She calls your phone now. Pick what it is about.</div><div class="actions"><button class="btn w2" data-act="callMeOpen">Call me now</button><button class="btn" data-cm="goodnight">Goodnight call</button><button class="btn ghost" data-cmlater="1">Set a time</button></div></div>';
     var pend = ST.pending && Date.now() - ST.pending < 3 * 60e3 ? '<div class="note okbox" role="status" style="margin-top:10px">Katya is calling you now. The call shows up below when it ends.</div>' : '';
     var nq = q.length ? '<a class="card needs" href="#/' + ST.P + '/queue"><div class="grow"><div class="t">' + q.length + ' ' + (q.length === 1 ? 'draft' : 'drafts') + ' waiting for your OK</div><div class="m ell">' + esc(q[0].body) + '</div></div><span class="tag warn">Review</span></a>' : '';
-    var up = r.length ? '<h2>Coming up</h2><div class="card">' + r.map(function (x) { var nx = nextRoutine(x.when);
+    var sr = TTG() ? '' : schedRows();
+    var up = r.length || sr ? '<h2>Coming up</h2><div class="card">' + sr + r.map(function (x) { var nx = nextRoutine(x.when);
       return '<a class="row link" href="#/' + ST.P + '/routines"><div class="grow"><div class="t">' + esc(x.name) + '</div><div class="m">' + esc(nx ? 'Next: ' + nx : x.when) + '</div></div><span class="chev">›</span></a>'; }).join('') + '</div>' : '';
     return hero + pend + nq + favRow() + up +
       '<h2>Recent <a href="#/' + ST.P + '/calls">All calls</a></h2>' + (!ST.calls ? loading() : cs.length ? '<div class="card">' + cs.slice(0, 4).map(callRow).join('') + '</div>' : empty('No calls yet', TTG() ? 'Calls you start show up here.' : 'Tap Call me now and Katya calls you.'));
@@ -197,15 +202,26 @@
   };
   V.ask = function () { ST.f = ST.f || { type: 'All', person: '' }; return V.calls(); };
   V.queue = function () {
-    var q = outbox();
-    return '<h1>Approve</h1><p class="sub">Texts and emails wait here. Nothing is sent automatically.</p>' +
-      (q.length ? q.map(function (x) { return '<div class="card pad"><div style="display:flex;justify-content:space-between;gap:8px"><div class="t">' + (x.ch === 'email' ? 'Email' : 'Text') + ' to ' + esc(x.to) + '</div><span class="tag">Draft</span></div>' +
-        '<div class="m" style="margin:2px 0 8px">' + esc(x.why) + ' · ' + esc(when(x.at)) + '</div>' + (x.subj ? '<div class="flabel">Subject</div><div>' + esc(x.subj) + '</div>' : '') +
-        '<div class="flabel">Message</div><textarea rows="3" data-body="' + esc(x.id) + '">' + esc(x.body) + '</textarea>' +
-        '<div class="btns" style="margin-top:10px"><button class="btn red" data-ob="outboxDiscard" data-id="' + esc(x.id) + '">Discard</button><button class="btn ghost" data-ob="outboxEdit" data-id="' + esc(x.id) + '">Save edit</button><button class="btn" data-ob="outboxApprove" data-id="' + esc(x.id) + '">Approve</button></div></div>'; }).join('') +
-        '<p class="m">Approve records your OK. Delivery is not connected yet, so approved items are not sent by this app.</p>'
-        : empty('Nothing waiting', 'Texts and emails you write in New land here first.') + '<a class="btn w ghost" href="#/' + ST.P + '/new">Write a text or email</a>');
+    var q = outbox(), sent = ((ST.boot && ST.boot.outbox) || []).filter(function (x) { return x.portal === ST.P && x.status === 'sent'; }).slice(0, 8);
+    return '<h1>Approve</h1><p class="sub">Approve sends it now, once. Nothing sends by itself.</p>' +
+      (q.length ? q.map(obCard).join('') : empty('Nothing waiting', 'Texts and emails you write in New land here first.') + '<a class="btn w ghost" href="#/' + ST.P + '/new">Write a text or email</a>') +
+      (sent.length ? '<h2>Sent</h2><div class="card">' + sent.map(function (x) { return '<div class="row"><div class="grow"><div class="t ell">' + (x.ch === 'email' ? 'Email' : 'Text') + ' to ' + esc(x.ch === 'email' ? x.sent_to || x.to : (x.destLabel || x.to) + ' ' + fmtNum(x.sent_to)) + '</div><div class="m ell">' + esc(when(x.sent_at)) + ' \u00B7 ' + esc(x.body) + '</div></div><span class="tag good">Sent</span></div>'; }).join('') + '</div>' : '');
   };
+  function obCard(x) {
+    var em = x.ch === 'email', failed = x.status === 'failed', res = x.result || {};
+    var dest = em ? esc(x.dest || x.to) : esc((x.destLabel ? x.destLabel + ' ' : '') + (x.dest ? fmtNum(x.dest) : x.to));
+    var from = em ? (x.from || '') : 'Katya line ' + fmtNum(x.from);
+    var other = x.from === 'rgafni@togethertheygrow.com' ? 'rgafni84@gmail.com' : 'rgafni@togethertheygrow.com';
+    return '<div class="card pad obc"><div style="display:flex;justify-content:space-between;gap:8px"><div class="t">' + (em ? 'Email' : 'Text') + '</div><span class="tag ' + (failed ? 'bad' : '') + '">' + (failed ? 'Not sent' : 'Draft') + '</span></div>' +
+      '<div class="m" style="margin:2px 0 8px">' + esc(x.why) + ' \u00B7 ' + esc(when(x.at)) + '</div>' +
+      '<div class="kv"><span>To</span><b>' + dest + '</b></div>' +
+      '<div class="kv"><span>From</span><b>' + esc(from) + '</b>' + (em ? '<button class="lnk" data-obfrom="' + esc(x.id) + '" data-v="' + esc(other) + '">Change</button>' : '') + '</div>' +
+      (x.subj ? '<div class="kv"><span>Subject</span><b>' + esc(x.subj) + '</b></div>' : '') +
+      '<div class="flabel">Message</div><textarea rows="3" data-body="' + esc(x.id) + '">' + esc(x.body) + '</textarea>' +
+      (x.destErr ? '<div class="note warnbox" role="alert" style="margin-top:8px">Can\u2019t send: ' + esc(x.destErr) + '</div>' : failed && res.msg ? '<div class="note warnbox" role="status" style="margin-top:8px">Not sent ' + esc(when(res.at)) + ': ' + esc(res.msg) + '</div>' : '') +
+      '<div class="btns" style="margin-top:10px"><button class="btn red" data-ob="outboxDiscard" data-id="' + esc(x.id) + '">Discard</button><button class="btn ghost" data-ob="outboxEdit" data-id="' + esc(x.id) + '">Save edit</button>' +
+      '<button class="btn" data-ob="outboxApprove" data-id="' + esc(x.id) + '"' + (x.destErr ? ' disabled' : '') + '>Approve</button></div></div>';
+  }
   V.new = function () {
     var ch = ST.ch, dr = ST.draft;
     var head = '<h1>New ' + ch.toLowerCase() + '</h1><p class="sub">' + (ch === 'Call' ? 'Katya calls only after you confirm' : 'Goes to Approve first. Nothing sends by itself.') + '</p>' +
@@ -461,17 +477,21 @@
     if (d.who != null) { saveDraft(); var wc = people()[+d.who]; if (wc) { ST.draft.to = fmtNum(wc.num); ST.draft.who = wc.name; } draw(1); return; }
     if (d.act === 'callMeOpen') { callMeSheet(); return; }
     if (d.cm) { callMeSheet(d.cm); return; }
-    if (d.cmk) { var cn = $('#cmnote'); if (cn) ST.cm.note = cn.value; callMeSheet(d.cmk); return; }
-    if (d.act === 'saveMe') { var mn = String(($('#menum') || {}).value || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
-      if (mn.length !== 10) return callMeSheet(null, 'Enter a 10-digit number');
-      t.disabled = true; var pl = people().slice(); pl.push({ name: 'Me', num: mn, email: '', fav: false, portal: 'life' });
-      api('saveContacts2', { list: pl }).then(function (j) { ST.boot.contacts = j.contacts; if (meContact()) callMeSheet(); else callMeSheet(null, 'Saved, but the number did not come back. Check People.'); })
-        .catch(function (x) { callMeSheet(null, 'Not saved: ' + x.message); }); return; }
-    if (d.act === 'callMe') { var me = meContact(); if (!me) return callMeSheet(); var nt = $('#cmnote'); ST.cm.note = nt ? nt.value.trim() : '';
-      t.disabled = true; t.textContent = 'Calling…';
-      api('start', { to: String(me.num).replace(/\D/g, ''), task: callMeTask(ST.cm.k, ST.cm.note), portal: 'life', type: 'personal' })
+    if (d.cmk) { cmRead(); if (ST.cm.later && ((d.cmk === 'wake') !== (ST.cm.k === 'wake'))) ST.cm.time = ''; callMeSheet(d.cmk); return; }
+    if (d.cmlater) { ST.cm = ST.cm || { k: 'checkin', note: '', later: false, day: 'today', time: '' }; ST.cm.later = true; callMeSheet(); return; }
+    if (d.cmw) { cmRead(); ST.cm.later = d.cmw === 'later'; callMeSheet(); return; }
+    if (d.cmd) { cmRead(); ST.cm.day = d.cmd; callMeSheet(); return; }
+    if (d.act === 'callMe') { cmRead(); var cm = ST.cm; cm.note = String(cm.note || '').trim();
+      if (cm.later && !/^\d{2}:\d{2}$/.test(cm.time || '')) return callMeSheet(null, 'Pick a time');
+      t.disabled = true; t.textContent = cm.later ? 'Scheduling\u2026' : 'Calling\u2026';
+      if (cm.later) { api('callSchedule', { type: cm.k, note: cm.note, day: cm.day, time: cm.time })
+        .then(function (j) { closeSheet(); ST.boot.calls10 = Object.assign({}, c10(), { scheduled: j.scheduled }); toast(plabel(j.item.type) + ' call set for ' + when(j.item.at)); ST.cm = null; draw(1); })
+        .catch(function (x) { callMeSheet(null, x.message); }); return; }
+      api('callNow', { type: cm.k, note: cm.note })
         .then(function () { closeSheet(); ST.cm = null; ST.pending = Date.now(); toast('Katya is calling you now'); draw(1); setTimeout(load, 20000); setTimeout(load, 90000); })
         .catch(function (x) { callMeSheet(null, x.message); }); return; }
+    if (d.scancel) { t.disabled = true; api('callCancel', { id: d.scancel }).then(function (j) { ST.boot.calls10 = Object.assign({}, c10(), { scheduled: j.scheduled }); toast('Canceled. Katya will not call.'); draw(1); }).catch(function (x) { t.disabled = false; toast(x.message); }); return; }
+    if (d.obfrom) { var ob = ((ST.boot && ST.boot.outbox) || []).filter(function (x) { return x.id === d.obfrom; })[0]; if (ob) { ob.from = d.v; ob.fromSet = true; } draw(1); return; }
     if (d.act === 'clearAsk') { ST.ask = null; ST.asking = false; ST.askq = ''; if (ST.route[0] === 'ask') go('calls'); else draw(); return; }
     if (d.act === 'pAdd') { personSheet(-1); return; }
     if (d.pfav) { t.classList.toggle('on'); return; }
@@ -484,10 +504,12 @@
     if (d.ch) { saveDraft(); ST.ch = d.ch; draw(1); }
     if (d.again) { ST.ch = 'Call'; var ag = people().filter(function (c) { return String(c.num || '').replace(/\D/g, '').slice(-10) === String(d.again).replace(/\D/g, '').slice(-10); })[0]; ST.draft = { to: fmtNum(d.again), who: ag ? ag.name : '' }; go('new'); }
     if (d.ob) { var b = document.querySelector('[data-body="' + d.id + '"]'); t.disabled = true;
-      api(d.ob, { id: d.id, body: b && b.value }).then(function (j) { ST.boot.outbox = j.outbox; toast(d.ob === 'outboxApprove' ? 'Approved. Not sent automatically' : d.ob === 'outboxDiscard' ? 'Discarded' : 'Saved'); draw(1); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
+      var oi = ((ST.boot && ST.boot.outbox) || []).filter(function (x) { return x.id === d.id; })[0] || {}, pl = { id: d.id, body: b && b.value };
+      if (d.ob === 'outboxApprove') { pl.dest = oi.dest; if (oi.fromSet) pl.from = oi.from; t.textContent = 'Sending\u2026'; }
+      api(d.ob, pl).then(function (j) { ST.boot.outbox = j.outbox; toast(d.ob === 'outboxApprove' ? (j.sent ? 'Sent' : 'Not sent: ' + j.msg) : d.ob === 'outboxDiscard' ? 'Discarded' : 'Saved'); draw(1); }).catch(function (x) { t.disabled = false; t.textContent = d.ob === 'outboxApprove' ? 'Approve' : t.textContent; toast(x.message); }); }
     if (d.act === 'toQueue') { saveDraft(); var dr = ST.draft; if (!dr.to || !dr.body) return toast('Add who it is for and a message');
       t.disabled = true; api('outboxAdd', { ch: ST.ch === 'Email' ? 'email' : 'sms', portal: ST.P, to: dr.to, subj: dr.subj, body: dr.body })
-        .then(function (j) { ST.boot.outbox = j.outbox; ST.draft = {}; toast('Added to Approve. Not sent.'); go('queue'); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
+        .then(function (j) { ST.boot.outbox = j.outbox; ST.draft = {}; toast('Added to Approve. Not sent yet.'); go('queue'); }).catch(function (x) { t.disabled = false; toast(x.message); }); }
     if (d.act === 'confirmCall') { saveDraft(); var dc = ST.draft, dg = String(dc.to || '').replace(/\D/g, '');
       if (dg.length < 10) return toast('Enter a 10-digit number'); if (!dc.task || dc.task.length < 8) return toast('Say what the call is for');
       sheet('<div class="t" style="font-size:19px">Place this call now?</div><p class="m">Katya will call <b>' + esc((dc.who ? dc.who + ', ' : '') + fmtNum(dg)) + '</b> from ' + esc(fmtNum((ST.boot || {}).line)) + '.</p><div class="note" style="margin-bottom:14px">' + esc(dc.task) + '</div>' +

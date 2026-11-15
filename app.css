@@ -170,3 +170,10 @@ nav.tabs a{padding-top:10px}nav.tabs svg{display:block;margin:0 auto 2px;width:2
  .needs{border-color:#5a4718}
  .chev{color:#646a73}
 }
+/* v10: call at a set time, Approve sends */
+.seg.seg2{margin:0 0 4px}
+.when2{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}.when2 .chips{margin:0}
+.when2 input[type=time]{width:auto;min-width:140px;min-height:44px;font-size:17px}
+.av.sm{width:34px;height:34px;font-size:16px}
+.kv{display:flex;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line);font-size:15px}.kv span{width:62px;flex:none;color:var(--mute);font-size:13.5px}.kv b{font-weight:600;word-break:break-word;flex:1}.kv .lnk{flex:none}
+.btn[disabled]{opacity:.45}
