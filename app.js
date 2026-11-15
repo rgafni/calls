@@ -96,7 +96,7 @@
   /* ---------- call me (Katya calls Roni's own phone) ----------
      The server places the call to Roni's own cell and writes the task for the chosen type (callNow / callSchedule).
      The sheet is the confirm step: nothing is placed or scheduled until the button is tapped.
-     The server enforces Shabbat/Yom Tov (now and at the scheduled time) and the daily limit. */
+     The server enforces the daily limit. Calls run any day, Shabbat and Yom Tov too (rule change Nov 15 2026). */
   var PURPOSE = [['checkin', 'Quick check-in'], ['goodnight', 'Goodnight'], ['plan', 'Plan tomorrow'], ['todo', 'Make a to-do list'], ['wake', 'Wake me up']];
   var c10 = function () { return (ST.boot && ST.boot.calls10) || {}; };
   var plabel = function (k) { var p = PURPOSE.filter(function (x) { return x[0] === k; })[0]; return p ? p[1] : 'Call'; };
@@ -246,7 +246,7 @@
         '<div class="kv"><span class="m">Calls</span><span>' + esc(x.to) + '</span></div><div class="kv"><span class="m">Voice</span><span>' + esc(x.voice) + '</span></div><div class="kv"><span class="m">Longest</span><span>' + esc(x.max) + '</span></div>' +
         '<div class="kv"><span class="m">Voicemail</span><span style="text-align:right;max-width:65%">' + esc(x.vm) + '</span></div><p class="m">' + esc(x.rules) + '</p></div>'; }).join('')
       : empty(TTG() ? 'No TTG routines' : 'No routines', TTG() ? 'Business calls are started one at a time from New.' : '')) +
-      '<h2>Everywhere</h2><div class="card"><div class="row"><div class="grow"><div class="t">Shabbat & Yom Tov</div><div class="m">All calls blocked from candle lighting to havdalah (checked by the server)</div></div><span class="tag good">Always on</span></div></div>' +
+      '<h2>Everywhere</h2><div class="card"><div class="row"><div class="grow"><div class="t">Shabbat & Yom Tov</div><div class="m">Calls and texts run like any day. Only from the 443 line.</div></div><span class="tag">Runs</span></div></div>' +
       '<p class="m">To change a time or turn one off, ask your assistant in chat.</p>';
   };
   V.personas = function () {
@@ -348,7 +348,7 @@
       (vma === 'leave_message' ? '<textarea id="csvm" rows="3" maxlength="400" placeholder="Message to leave">' + esc(csVal(t, 'vm_message') || '') + '</textarea>' : '') + '</div>' +
       tog(t, 'vm_sensitive', 'Smarter voicemail detection', 'Slower, fewer mistakes') + '</div>' +
       '<div class="btns" style="margin-top:6px"><button class="btn ghost" data-act="csPreview">See what is sent</button></div>' +
-      '<p class="m">Used by app calls and Katya’s routine calls. The Shabbat and Yom Tov block, the AI disclosure and the 20-call limit are enforced for calls started in this app. Routine calls follow their own instructions.</p>' +
+      '<p class="m">Used by app calls and Katya’s routine calls. The AI disclosure and the 20-call limit are enforced for calls started in this app. Routine calls follow their own instructions.</p>' +
       (ST.csDirty ? '<div class="savebar"><button class="btn ghost" data-act="csUndo">Undo</button><button class="btn" data-act="csSave">Save</button></div>' : '<p class="m">Saved · version ' + (ST.cs.settings.rev || 0) + '</p>');
     return h;
   };
